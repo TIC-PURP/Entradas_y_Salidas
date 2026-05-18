@@ -1,3 +1,5 @@
+// Comentario para personas no técnicas: Contiene utilidades para conectar la app con Odoo y traducir sus datos a un formato fácil de usar.
+
 /**
  * Helpers para conectar con Odoo desde el servidor.
  *

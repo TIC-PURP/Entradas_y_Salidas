@@ -1,5 +1,7 @@
 "use client";
 
+// Comentario para personas no técnicas: Lista de avisos operativos que logística envía a caseta para su revisión.
+
 import { useEffect, useRef, useState } from "react";
 import { Bell, CheckCircle2, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
@@ -12,6 +14,7 @@ interface GuardNotificationsProps {
   onOpenTrip: (folio: string) => void;
 }
 
+// Panel de avisos para que caseta vea correcciones o pendientes enviados por logística.
 export function GuardNotifications({ onOpenTrip }: GuardNotificationsProps) {
   const [notifications, setNotifications] = useState<GuardNotification[]>([]);
   const [open, setOpen] = useState(false);
@@ -44,11 +47,13 @@ export function GuardNotifications({ onOpenTrip }: GuardNotificationsProps) {
 
   const pendingCount = notifications.length;
 
+  // Busca el viaje mencionado por la notificación y lo abre para revisión.
   const handleOpenTrip = (folio: string) => {
     setOpen(false);
     onOpenTrip(folio);
   };
 
+  // Oculta el aviso una vez que el guardia lo atiende.
   const handleAcknowledge = async (folio: string) => {
     await acknowledgeGuardNotification(folio);
     setNotifications((prev) => prev.filter((item) => item.folio !== folio));

@@ -1,5 +1,7 @@
 "use client";
 
+// Comentario para personas no técnicas: Interfaz de apoyo para registrar accesos y salidas de visitantes o unidades internas.
+
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Car, Clock, LogOut, Plus, Search, User } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +17,7 @@ interface AccessControlProps {
   onBack: () => void;
 }
 
+// Control completo de accesos manuales usado cuando se necesita una vista dedicada.
 export function AccessControl({ onBack }: AccessControlProps) {
   const [records, setRecords] = useState<AccessRecord[]>([]);
   const [fleetVehicles, setFleetVehicles] = useState<FleetVehicle[]>([]);
@@ -48,10 +51,12 @@ export function AccessControl({ onBack }: AccessControlProps) {
     }
   };
 
+  // Crea un diccionario para mostrar el nombre del vehículo a partir de su identificador.
   const vehicleNameById = useMemo(() => {
     return new Map(fleetVehicles.map((vehicle) => [String(vehicle.id), vehicle.name]));
   }, [fleetVehicles]);
 
+  // Muestra solo registros que coinciden con la búsqueda escrita por el usuario.
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return records.filter((r) => {
@@ -73,6 +78,7 @@ export function AccessControl({ onBack }: AccessControlProps) {
     return new Date(value).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" });
   };
 
+  // Valida los campos básicos y registra una nueva entrada manual.
   const handleCreate = async () => {
     if (!nombre.trim()) {
       toast.error("Captura el nombre");
@@ -105,6 +111,7 @@ export function AccessControl({ onBack }: AccessControlProps) {
     }
   };
 
+  // Marca la salida de un registro y actualiza la lista en pantalla.
   const handleExit = async (id: string) => {
     const updated = await registerAccessExit(id);
     if (!updated) return;

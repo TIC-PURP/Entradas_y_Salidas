@@ -1,3 +1,6 @@
+// Comentario para personas no técnicas: Define los nombres y estructuras de datos que usa la app para viajes, accesos, notificaciones y vehículos.
+
+// Estados posibles de un viaje, desde que se planea hasta que termina.
 export type TripStatus =
   | "planeado"
   | "en_camino"
@@ -6,6 +9,7 @@ export type TripStatus =
   | "en_proceso"
   | "finalizado";
 
+// Información mínima que la caseta necesita ver de cada viaje.
 export interface Trip {
   id?: number;
   folio: string;
@@ -19,9 +23,11 @@ export interface Trip {
   fecha_salida?: string;
 }
 
+// Estados de un acceso manual: entró, sigue dentro o ya salió.
 export type AccessStatus = "entrada" | "en_planta" | "salida";
 export type VehicleType = "Vehículo PURP" | "Otro vehículo";
 
+// Registro de una persona o vehículo que entra sin pasar por el flujo de viaje.
 export interface AccessRecord {
   id: string;
   nombre: string;
@@ -33,6 +39,7 @@ export interface AccessRecord {
   fecha_salida?: string;
 }
 
+// Textos amigables que se muestran al usuario en lugar de claves técnicas.
 export const STATUS_LABELS: Record<TripStatus, string> = {
   planeado: "Planeado",
   en_camino: "En Camino",
@@ -42,6 +49,7 @@ export const STATUS_LABELS: Record<TripStatus, string> = {
   finalizado: "Finalizado",
 };
 
+// Colores visuales para distinguir rápidamente el estado de cada viaje.
 export const STATUS_COLORS: Record<TripStatus, string> = {
   planeado: "bg-slate-200 text-slate-800",
   en_camino: "bg-info text-info-foreground",
@@ -63,6 +71,7 @@ export const ACCESS_STATUS_COLORS: Record<AccessStatus, string> = {
   salida: "bg-muted text-muted-foreground",
 };
 
+// Aviso enviado a caseta para que el guardia revise un viaje o una corrección.
 export interface GuardNotification {
   id: string;
   folio: string;
@@ -74,6 +83,7 @@ export interface GuardNotification {
   done?: boolean;
 }
 
+// Vehículo interno disponible para seleccionar en registros de acceso.
 export interface FleetVehicle {
   id: number;
   name: string;

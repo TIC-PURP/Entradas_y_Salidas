@@ -1,3 +1,5 @@
+// Comentario para personas no técnicas: Componente visual reutilizable; sirve como pieza de construcción para botones, formularios, menús y tarjetas.
+
 import { cn } from '@/lib/utils'
 
 function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {

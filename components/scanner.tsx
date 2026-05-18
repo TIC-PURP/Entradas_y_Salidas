@@ -1,5 +1,7 @@
 "use client";
 
+// Comentario para personas no técnicas: Muestra la cámara para leer códigos QR o de barras y avisar cuando se detecta un viaje.
+
 import { useState } from "react";
 import { Scanner as QRScanner, IDetectedBarcode } from "@yudiel/react-qr-scanner";
 import { Card } from "@/components/ui/card";
@@ -13,9 +15,11 @@ interface ScannerProps {
   isLoading: boolean;
 }
 
+// Componente que guía al guardia para usar la cámara y leer un código.
 export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
   const [cameraError, setCameraError] = useState<string | null>(null);
 
+  // Toma el primer código detectado y lo entrega a la pantalla principal.
   const handleScan = (detectedCodes: IDetectedBarcode[]) => {
     if (detectedCodes.length > 0 && !isLoading) {
       const code = detectedCodes[0].rawValue?.trim();
@@ -26,6 +30,7 @@ export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
     }
   };
 
+  // Si la cámara falla, muestra un mensaje simple para que el usuario sepa qué hacer.
   const handleError = (err: unknown) => {
     console.error("Scanner error:", err);
 

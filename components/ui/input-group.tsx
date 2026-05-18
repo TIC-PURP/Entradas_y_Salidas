@@ -1,5 +1,7 @@
 'use client'
 
+// Comentario para personas no técnicas: Componente visual reutilizable; sirve como pieza de construcción para botones, formularios, menús y tarjetas.
+
 import { cva, type VariantProps } from 'class-variance-authority'
 
 import { cn } from '@/lib/utils'

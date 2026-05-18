@@ -1,5 +1,7 @@
 "use client"
 
+// Comentario para personas no técnicas: Botón que revisa avisos para guardia y permite abrir el viaje relacionado.
+
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Bell, Check, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
@@ -44,12 +46,14 @@ function showBrowserNotification(item: GuardNotification) {
   }
 }
 
+// Botón flotante que concentra los avisos pendientes para el guardia.
 export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<GuardNotification[]>([])
   const readIdsRef = useRef<Set<string>>(readStoredIds())
   const seenThisSessionRef = useRef<Set<string>>(new Set())
 
+  // Solo cuenta avisos que todavía no han sido atendidos.
   const pending = useMemo(
     () => items.filter((item) => !readIdsRef.current.has(item.id) && !item.done),
     [items],
@@ -82,6 +86,7 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
     }
   }
 
+  // Consulta avisos periódicamente para que caseta vea cambios sin recargar la página.
   useEffect(() => {
     requestNotificationPermission()
     load()
@@ -96,6 +101,7 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
     }
   }, [])
 
+  // Abre el viaje relacionado con el aviso para que el guardia lo revise.
   const handleOpen = async (notification: GuardNotification) => {
     const trip = await getTripByCode(notification.folio)
     if (trip) {
@@ -104,6 +110,7 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
     }
   }
 
+  // Marca un aviso individual como leído o resuelto.
   const handleAcknowledge = async (notification: GuardNotification) => {
     await acknowledgeGuardNotification(notification.id)
     readIdsRef.current.add(notification.id)

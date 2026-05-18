@@ -1,5 +1,7 @@
 'use client'
 
+// Comentario para personas no técnicas: Componente visual reutilizable; sirve como pieza de construcción para botones, formularios, menús y tarjetas.
+
 import * as React from 'react'
 import { Drawer as DrawerPrimitive } from 'vaul'
 

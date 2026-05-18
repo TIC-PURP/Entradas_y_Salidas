@@ -1,5 +1,8 @@
+// Comentario para personas no técnicas: Centraliza las acciones de la app; decide si usar datos de prueba o pedir información real al servidor.
+
 import type { AccessRecord, FleetVehicle, GuardNotification, Trip, TripStatus, VehicleType } from "./types"
 
+// Datos de ejemplo para que la aplicación pueda probarse sin conectarse a Odoo.
 const mockTrips: Trip[] = [
   { id: 1, folio: "VJ-2024-001", orden: "OV-15234", movimiento_origen: "PICK-00091", chofer: "Juan Pérez García", placas: "ABC-123-XY", linea_fletera: "Transportes del Norte", estado: "en_camino" },
   { id: 2, folio: "VJ-2024-002", orden: "OV-15235", movimiento_origen: "PICK-00092", chofer: "María López Hernández", placas: "DEF-456-ZW", linea_fletera: "Fletes Rápidos SA", estado: "en_revision", fecha_entrada: "2026-04-29T08:10:00" },
@@ -11,6 +14,7 @@ const mockAccessRecords: AccessRecord[] = [
   { id: "A-001", nombre: "Mario Pérez", vehiculo: "Vehículo PURP", vehiculo_purp: "PICKUP 04", estado: "en_planta", fecha_entrada: "2026-04-29T09:00:00" },
 ]
 
+// Copias modificables: simulan cambios reales mientras se usa el modo de prueba.
 let trips = [...mockTrips]
 let accessRecords = [...mockAccessRecords]
 let fleetVehicles: FleetVehicle[] = [
@@ -24,10 +28,12 @@ let notifications: GuardNotification[] = [
   { id: "N-001", folio: "VJ-2024-002", message: "Logística corrigió datos del camión. Revalidar en caseta." },
 ]
 
+// Si esta variable está activa, se usan datos de prueba; si no, se consulta Odoo.
 const useMock = () => process.env.NEXT_PUBLIC_USE_MOCK === "true"
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const nowIso = () => new Date().toISOString()
 
+// Envía una acción al endpoint interno; así el navegador no conoce las claves de Odoo.
 async function odoo<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   const res = await fetch("/api/odoo", {
     method: "POST",
@@ -40,6 +46,7 @@ async function odoo<T>(action: string, payload: Record<string, unknown> = {}): P
   return json.data as T
 }
 
+// Busca un viaje por folio, orden o placas, que son los datos que puede traer un código escaneado.
 export async function getTripByCode(code: string): Promise<Trip | null> {
   if (!useMock()) return odoo<Trip | null>("getTripByCode", { code })
   await delay(200)
@@ -53,12 +60,14 @@ export async function getTripByCode(code: string): Promise<Trip | null> {
   return found ?? null
 }
 
+// Devuelve los viajes visibles para caseta; los planeados aún no deben aparecer como operables.
 export async function getAllTrips(): Promise<Trip[]> {
   if (!useMock()) return odoo<Trip[]>("getAllTrips")
   await delay(200)
   return trips.filter((trip) => trip.estado !== "planeado")
 }
 
+// Cambia el estado de un viaje y agrega fechas cuando se registra entrada, revisión o salida.
 export async function updateTripStatus(folio: string, newStatus: TripStatus, additionalData?: Partial<Trip>): Promise<Trip | null> {
   if (!useMock()) return odoo<Trip | null>("updateTripStatus", { folio, newStatus, additionalData })
   await delay(200)
@@ -68,34 +77,41 @@ export async function updateTripStatus(folio: string, newStatus: TripStatus, add
   return trips[index]
 }
 
+// Marca que el camión entró correctamente y queda esperando siguiente paso operativo.
 export async function validateEntry(folio: string): Promise<Trip | null> {
   return updateTripStatus(folio, "en_espera", { fecha_entrada: nowIso() })
 }
 
+// Marca un viaje para revisión cuando la caseta detecta datos incorrectos o incompletos.
 export async function markInvalid(folio: string): Promise<Trip | null> {
   return updateTripStatus(folio, "en_revision", { fecha_entrada: nowIso() })
 }
 
+// Regresa el viaje a espera cuando logística corrigió la información pendiente.
 export async function validateCorrection(folio: string): Promise<Trip | null> {
   return updateTripStatus(folio, "en_espera")
 }
 
+// Registra la salida del camión y cierra el viaje en la vista de caseta.
 export async function registerExit(folio: string): Promise<Trip | null> {
   return updateTripStatus(folio, "finalizado", { fecha_salida: nowIso() })
 }
 
+// Obtiene las unidades internas disponibles para registrar accesos de vehículos PURP.
 export async function getFleetVehicles(): Promise<FleetVehicle[]> {
   if (!useMock()) return odoo<FleetVehicle[]>("getFleetVehicles")
   await delay(100)
   return [...fleetVehicles]
 }
 
+// Lista las entradas y salidas manuales de visitantes o unidades no asociadas a viajes.
 export async function getAccessRecords(): Promise<AccessRecord[]> {
   if (!useMock()) return odoo<AccessRecord[]>("getAccessRecords")
   await delay(200)
   return [...accessRecords]
 }
 
+// Crea una entrada manual para una persona o vehículo que ingresa a planta.
 export async function createAccessRecord(data: {
   nombre: string
   vehiculo: VehicleType
@@ -117,6 +133,7 @@ export async function createAccessRecord(data: {
   return record
 }
 
+// Coloca la hora de salida a un acceso manual para saber que ya abandonó la planta.
 export async function registerAccessExit(id: string): Promise<AccessRecord | null> {
   if (!useMock()) return odoo<AccessRecord | null>("registerAccessExit", { id })
   await delay(200)
@@ -126,12 +143,14 @@ export async function registerAccessExit(id: string): Promise<AccessRecord | nul
   return accessRecords[index]
 }
 
+// Trae avisos pendientes que logística quiere que el guardia revise.
 export async function getGuardNotifications(): Promise<GuardNotification[]> {
   if (!useMock()) return odoo<GuardNotification[]>("getGuardNotifications")
   await delay(100)
   return notifications.filter((n) => !n.done)
 }
 
+// Marca un aviso como atendido para que deje de mostrarse como pendiente.
 export async function acknowledgeGuardNotification(id: string): Promise<void> {
   if (!useMock()) return odoo<void>("acknowledgeGuardNotification", { id })
   notifications = notifications.map((n) => n.id === id ? { ...n, done: true } : n)

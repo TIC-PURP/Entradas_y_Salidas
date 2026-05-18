@@ -1,5 +1,7 @@
 "use client";
 
+// Comentario para personas no técnicas: Muestra la lista de viajes para consulta rápida y seguimiento operativo.
+
 import { useEffect, useState } from 'react';
 import { getAllTrips, updateTripStatus } from '../../lib/api';
 import TripCard from '../../components/TripCard';
@@ -43,6 +45,7 @@ export default function ViajesPage() {
     return () => clearInterval(interval); // Limpiar intervalo al desmontar
   }, []);
 
+  // Cambia el estado de un viaje desde la lista de seguimiento.
   async function handleAction(id: number, newState: TripStatus | string) {
     const viaje = viajes.find(v => v.id === id);
     if (!viaje) return;

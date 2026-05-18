@@ -1,3 +1,5 @@
+// Comentario para personas no técnicas: Archivo de configuración que indica a las herramientas cómo compilar o procesar el proyecto.
+
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 

@@ -1,5 +1,7 @@
 "use client";
 
+// Comentario para personas no técnicas: Pantalla principal de caseta: escanea códigos, busca viajes y muestra el resultado al guardia.
+
 import { useState, useCallback } from "react";
 import { Scanner } from "@/components/scanner";
 import { TripCard } from "@/components/trip-card";
@@ -10,13 +12,18 @@ import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { NotificationsButton } from "@/components/notifications-button";
 
+// Vistas posibles de la pantalla principal: cámara, detalle del viaje o búsqueda manual.
 type AppView = "scanner" | "trip" | "manual";
 
 export default function Home() {
+  // Guarda qué pantalla ve el guardia en este momento.
   const [view, setView] = useState<AppView>("scanner");
+  // Guarda el viaje encontrado para mostrar sus datos y acciones.
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+  // Evita dobles búsquedas mientras el sistema consulta la información.
   const [isLoading, setIsLoading] = useState(false);
 
+  // Cuando la cámara o el modo manual entregan un código, se busca el viaje correspondiente.
   const handleScan = useCallback(async (code: string) => {
     if (isLoading) return;
     
@@ -41,6 +48,7 @@ export default function Home() {
     }
   }, [isLoading]);
 
+  // Refresca la tarjeta cuando una acción cambia el estado del viaje.
   const handleTripUpdate = useCallback((updatedTrip: Trip) => {
     setSelectedTrip(updatedTrip);
     toast.success("Estado actualizado", {
@@ -48,6 +56,7 @@ export default function Home() {
     });
   }, []);
 
+  // Permite abrir un viaje elegido desde la búsqueda manual o desde notificaciones.
   const handleSelectTrip = useCallback((trip: Trip) => {
     setSelectedTrip(trip);
     setView("trip");
@@ -68,8 +77,10 @@ export default function Home() {
 
   return (
     <main className="min-h-screen flex flex-col bg-background">
+      {/* Botón de avisos: si logística manda una alerta, el guardia puede abrir el viaje relacionado. */}
       <NotificationsButton onOpenTrip={(trip) => { setSelectedTrip(trip); setView("trip"); }} />
       <div className="flex-1 flex flex-col max-w-lg mx-auto w-full p-4">
+        {/* Pantalla normal: abre la cámara para escanear códigos. */}
         {view === "scanner" && (
           <Scanner
             onScan={handleScan}
@@ -78,6 +89,7 @@ export default function Home() {
           />
         )}
 
+        {/* Pantalla de detalle: muestra la información y acciones del viaje encontrado. */}
         {view === "trip" && selectedTrip && (
           <TripCard
             trip={selectedTrip}
@@ -86,6 +98,7 @@ export default function Home() {
           />
         )}
 
+        {/* Alternativa sin cámara: permite buscar el viaje escribiendo datos. */}
         {view === "manual" && (
           <ManualMode
             onSelectTrip={handleSelectTrip}
