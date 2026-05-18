@@ -1,5 +1,7 @@
 "use client";
 
+// Comentario para personas no técnicas: Pantalla para registrar entradas y salidas manuales de personas o vehículos no ligados a un viaje.
+
 import { useEffect, useState } from 'react';
 import { getAccessRecords, createAccessRecord, registerAccessExit, getFleetVehicles } from '../../lib/api';
 import { AccessRecord, FleetVehicle, VehicleType } from '../../lib/types';
@@ -51,6 +53,7 @@ export default function AccesosPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Crea un nuevo acceso y limpia el formulario para el siguiente registro.
   async function handleCrear() {
     await createAccessRecord({
       nombre,
@@ -65,6 +68,7 @@ export default function AccesosPage() {
     await fetchData(); // Refrescar inmediatamente
   }
 
+  // Registra que la persona o vehículo seleccionado ya salió de planta.
   async function handleSalida(id: string) {
     await registerAccessExit(id);
     await fetchData(); // Refrescar inmediatamente

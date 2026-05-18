@@ -1,5 +1,7 @@
 'use client'
 
+// Comentario para personas no técnicas: Entrega el tema visual a todos los componentes de la aplicación.
+
 import * as React from 'react'
 import {
   ThemeProvider as NextThemesProvider,

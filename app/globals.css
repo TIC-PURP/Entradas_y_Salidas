@@ -1,3 +1,8 @@
+/*
+ * Comentario para personas no técnicas:
+ * Define colores, tipografías y reglas visuales globales que dan la apariencia industrial de la app.
+ */
+
 @import 'tailwindcss';
 @import 'tw-animate-css';
 

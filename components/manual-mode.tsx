@@ -1,5 +1,7 @@
 "use client";
 
+// Comentario para personas no técnicas: Permite buscar y elegir viajes sin cámara cuando el escaneo no está disponible.
+
 import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,7 @@ const STATUS_FILTERS: { value: TripStatus | "all"; label: string }[] = [
   { value: "finalizado", label: "Finalizado" },
 ];
 
+// Pantalla de respaldo para encontrar viajes escribiendo folio, orden, chofer o placas.
 export function ManualMode({ onSelectTrip, onBack }: ManualModeProps) {
   const [view, setView] = useState<ManualView>("menu");
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -34,6 +37,7 @@ export function ManualMode({ onSelectTrip, onBack }: ManualModeProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TripStatus | "all">("all");
 
+  // Al abrir la pantalla, carga los viajes disponibles para poder filtrarlos localmente.
   useEffect(() => {
     if (view !== "trips") return;
     const loadTrips = async () => {
@@ -47,6 +51,7 @@ export function ManualMode({ onSelectTrip, onBack }: ManualModeProps) {
     loadTrips();
   }, [view]);
 
+  // Filtra la lista según el texto buscado y el estado elegido por el guardia.
   const filteredTrips = useMemo(() => {
     return trips.filter((trip) => {
       const term = search.toLowerCase();

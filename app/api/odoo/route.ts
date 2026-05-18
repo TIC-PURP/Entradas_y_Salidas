@@ -1,3 +1,5 @@
+// Comentario para personas no técnicas: Recibe solicitudes internas de la app y las convierte en operaciones seguras contra Odoo.
+
 import { NextResponse } from "next/server"
 
 type OdooIdName = false | [number, string]
@@ -46,6 +48,7 @@ type OdooRpcError = {
   }
 }
 
+// Traduce estados entendibles de la app a los códigos internos que Odoo guarda.
 const STATUS_TO_ODOO: Record<string, string> = {
   planeado: "status1",
   en_camino: "status2",
@@ -59,6 +62,7 @@ const STATUS_FROM_ODOO: Record<string, string> = Object.fromEntries(
   Object.entries(STATUS_TO_ODOO).map(([key, value]) => [value, key]),
 )
 
+// Traduce estados de accesos manuales a los códigos internos usados por Odoo.
 const ACCESS_TO_ODOO: Record<string, string> = {
   entrada: "status1",
   en_planta: "status2",
@@ -69,6 +73,7 @@ const ACCESS_FROM_ODOO: Record<string, string> = Object.fromEntries(
   Object.entries(ACCESS_TO_ODOO).map(([key, value]) => [value, key]),
 )
 
+// Lee la configuración del ambiente para no escribir direcciones ni claves dentro del código.
 const cfg = () => ({
   url: process.env.ODOO_URL?.trim().replace(/\/+$/, "").replace(/\/odoo$/, ""),
   db: process.env.ODOO_DB?.trim(),
@@ -80,6 +85,7 @@ const cfg = () => ({
   chatterLookbackHours: Number(process.env.ODOO_CHATTER_LOOKBACK_HOURS || "48"),
 })
 
+// Revisa que existan las variables indispensables antes de intentar conectar con Odoo.
 function requireConfig() {
   const c = cfg()
   const missing = Object.entries(c).filter(([key, value]) => ["url", "db", "username", "apiKey"].includes(key) && !value)
@@ -91,6 +97,7 @@ function rpcMessage(payload: OdooRpcError, fallback = "Error RPC de Odoo") {
   return payload.error?.data?.message || payload.error?.message || fallback
 }
 
+// Hace una llamada directa al servicio JSON-RPC de Odoo y convierte errores técnicos en mensajes claros.
 async function odooRpc<T>(service: string, method: string, args: unknown[]): Promise<T> {
   const c = requireConfig()
   const res = await fetch(`${c.url}/jsonrpc`, {
@@ -120,6 +127,7 @@ async function odooRpc<T>(service: string, method: string, args: unknown[]): Pro
   return payload.result as T
 }
 
+// Inicia sesión en Odoo y obtiene el identificador de usuario necesario para operar.
 async function authenticate(): Promise<number> {
   const c = requireConfig()
   const uid = await odooRpc<number | false>("common", "authenticate", [c.db, c.username, c.apiKey, {}])
@@ -129,6 +137,7 @@ async function authenticate(): Promise<number> {
   return uid
 }
 
+// Ejecuta una operación sobre un modelo de Odoo, como buscar, crear o actualizar registros.
 async function callKw<T>(model: string, method: string, args: unknown[] = [], kwargs: Record<string, unknown> = {}): Promise<T> {
   const c = requireConfig()
   const uid = await authenticate()
@@ -154,6 +163,7 @@ function toOdooDatetime(value: unknown) {
   return String(value).slice(0, 19).replace("T", " ")
 }
 
+// Convierte un registro de viaje de Odoo al formato simple que entienden las pantallas.
 function mapTrip(record: OdooTrip) {
   return {
     id: record.id,
@@ -169,6 +179,7 @@ function mapTrip(record: OdooTrip) {
   }
 }
 
+// Convierte un acceso manual de Odoo al formato que muestra la app.
 function mapAccess(record: OdooAccess) {
   const odooStatus = record.x_studio_selection_field_87c_1jnb97pu7 || "status2"
   return {
@@ -211,6 +222,7 @@ async function getTrips(domain: unknown[] = []) {
   return records.map(mapTrip)
 }
 
+// Busca un viaje usando el dato escaneado o escrito: folio, orden o placas.
 async function getTripByCode(code: string) {
   const c = cfg()
   const clean = String(code || "").trim()
@@ -221,6 +233,7 @@ async function getTripByCode(code: string) {
   return trip
 }
 
+// Actualiza el estado del viaje y guarda fechas de entrada o salida cuando aplica.
 async function updateTripStatus(folio: string, newStatus: string, additionalData: Record<string, unknown> = {}) {
   const c = cfg()
   const trip = await getTripByCode(folio)
@@ -277,6 +290,7 @@ async function getAccessRecords() {
   return records.map(mapAccess)
 }
 
+// Crea en Odoo una entrada manual para visitante, proveedor o unidad interna.
 async function createAccessRecord(data: any) {
   const c = cfg()
   const vehicleType = data.vehiculo === "Vehículo PURP" ? "Vehículo PURP" : "Otro vehículo"
@@ -308,6 +322,7 @@ async function createAccessRecord(data: any) {
   return records[0] ? mapAccess(records[0]) : null
 }
 
+// Registra en Odoo la salida de una persona o vehículo que ya estaba dentro.
 async function registerAccessExit(id: string) {
   const c = cfg()
   const recordId = Number(id)
@@ -343,6 +358,7 @@ function hoursAgoOdooDatetime(hours: number) {
   return new Date(Date.now() - safeHours * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ")
 }
 
+// Revisa mensajes recientes y banderas de Odoo para avisar a caseta sobre correcciones o pendientes.
 async function getGuardNotifications() {
   const c = cfg()
 
@@ -391,12 +407,14 @@ async function getGuardNotifications() {
     .filter((item) => item.message.trim().length > 0)
 }
 
+// Marca una notificación como atendida para que no siga apareciendo al guardia.
 async function acknowledgeGuardNotification(id: string) {
   // Las notificaciones de chatter se marcan como leídas del lado de la PWA
   // con localStorage. No se modifica el mensaje original en Odoo.
   return { ok: true, id }
 }
 
+// Punto de entrada único: recibe la acción solicitada por la app y llama a la función correspondiente.
 export async function POST(req: Request) {
   try {
     const body = await req.json()

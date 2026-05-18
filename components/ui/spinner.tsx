@@ -1,3 +1,5 @@
+// Comentario para personas no técnicas: Componente visual reutilizable; sirve como pieza de construcción para botones, formularios, menús y tarjetas.
+
 import { Loader2Icon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'

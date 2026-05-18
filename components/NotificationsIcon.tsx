@@ -33,6 +33,7 @@ export default function NotificationsIcon() {
     return () => clearInterval(interval);
   }, []);
 
+  // Permite confirmar un aviso desde el icono de notificaciones.
   async function handleAcknowledge(folio: string) {
     await acknowledgeGuardNotification(folio);
     const notifs = await getGuardNotifications();

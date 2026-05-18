@@ -1,3 +1,5 @@
+// Comentario para personas no técnicas: Hook reutilizable de React; comparte comportamiento común entre pantallas y componentes.
+
 import * as React from 'react'
 
 const MOBILE_BREAKPOINT = 768

@@ -1,5 +1,7 @@
 "use client";
 
+// Comentario para personas no técnicas: Presenta la información de un viaje y los botones para cambiar su estado de entrada o salida.
+
 import { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,9 +37,11 @@ interface TripCardProps {
   onBack: () => void;
 }
 
+// Tarjeta que resume un viaje y ofrece las acciones que caseta puede realizar.
 export function TripCard({ trip, onUpdate, onBack }: TripCardProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
+  // Ejecuta una acción del viaje, como validar entrada, pedir revisión o registrar salida.
   const handleAction = async (
     action: () => Promise<Trip | null>,
     actionName: string
