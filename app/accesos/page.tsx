@@ -146,7 +146,7 @@ export default function AccesosPage() {
                   </div>
                     <button
                       onClick={() => handleSalida(acceso.id)}
-                      className="py-2 px-3 bg-success text-white rounded-md hover:bg-green-600"
+                      className="py-2 px-3 bg-success text-white rounded-md hover:bg-success"
                     >
                       Registrar salida
                     </button>

@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { EmployeeSession, Trip, TripStatus, STATUS_LABELS, STATUS_COLORS } from "@/lib/types";
 import { getAllTrips } from "@/lib/api";
-import { Search, ArrowLeft, Truck, Filter, ScanLine, UserCheck } from "lucide-react";
+import { Search, ArrowLeft, Truck, Filter, ScanLine, UserCheck, Building2 } from "lucide-react";
 import { AccessControl } from "@/components/access-control";
 
 interface ManualModeProps {
@@ -44,13 +44,13 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
     const loadTrips = async () => {
       setLoading(true);
       try {
-        setTrips(await getAllTrips());
+        setTrips(await getAllTrips(employee));
       } finally {
         setLoading(false);
       }
     };
     loadTrips();
-  }, [view]);
+  }, [view, employee]);
 
   // Filtra la lista según el texto buscado y el estado elegido por el guardia.
   const filteredTrips = useMemo(() => {
@@ -143,6 +143,12 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
                   <div className="flex-1 min-w-0">
                     <div className="mb-1 flex flex-wrap items-center gap-2">
                       <span className="break-words text-lg font-bold">{trip.folio}</span>
+                      {trip.almacen && (
+                        <Badge variant="secondary" className="text-xs">
+                          <Building2 className="mr-1 h-3 w-3" />
+                          {trip.almacen}
+                        </Badge>
+                      )}
                       <Badge className={`text-xs ${STATUS_COLORS[trip.estado]}`}>{STATUS_LABELS[trip.estado]}</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground truncate">{trip.orden} • {trip.chofer}</p>

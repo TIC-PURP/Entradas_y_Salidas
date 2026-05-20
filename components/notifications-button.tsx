@@ -1,6 +1,6 @@
 "use client"
 
-// Botón que revisa avisos para guardia y permite abrir el viaje relacionado.
+// Boton que revisa avisos para guardia y permite abrir el viaje relacionado.
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Bell, Check, ExternalLink } from "lucide-react"
@@ -9,26 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { getGuardNotifications, acknowledgeGuardNotification, getTripByCode } from "@/lib/api"
-import type { GuardNotification, Trip } from "@/lib/types"
-
-const STORAGE_KEY = "purp.chatterNotifications.readIds.v1"
+import type { EmployeeSession, GuardNotification, Trip } from "@/lib/types"
 
 interface NotificationsButtonProps {
   onOpenTrip: (trip: Trip) => void
-}
-
-function readStoredIds() {
-  if (typeof window === "undefined") return new Set<string>()
-  try {
-    return new Set<string>(JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]"))
-  } catch {
-    return new Set<string>()
-  }
-}
-
-function writeStoredIds(ids: Set<string>) {
-  if (typeof window === "undefined") return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(ids).slice(-500)))
+  employee: EmployeeSession
 }
 
 function showBrowserNotification(item: GuardNotification) {
@@ -46,16 +31,15 @@ function showBrowserNotification(item: GuardNotification) {
   }
 }
 
-// Botón flotante que concentra los avisos pendientes para el guardia.
-export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
+// Boton flotante que concentra los avisos pendientes para el guardia.
+export function NotificationsButton({ onOpenTrip, employee }: NotificationsButtonProps) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<GuardNotification[]>([])
-  const readIdsRef = useRef<Set<string>>(readStoredIds())
   const seenThisSessionRef = useRef<Set<string>>(new Set())
 
-  // Solo cuenta avisos que todavía no han sido atendidos.
+  // Solo cuenta avisos que todavia no han sido atendidos.
   const pending = useMemo(
-    () => items.filter((item) => !readIdsRef.current.has(item.id) && !item.done),
+    () => items.filter((item) => !item.done),
     [items],
   )
 
@@ -68,8 +52,7 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
 
   const load = async () => {
     try {
-      const result = await getGuardNotifications()
-      const unread = result.filter((item) => !readIdsRef.current.has(item.id))
+      const unread = await getGuardNotifications(employee)
       setItems(unread)
 
       for (const item of unread) {
@@ -86,7 +69,7 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
     }
   }
 
-  // Consulta avisos periódicamente para que caseta vea cambios sin recargar la página.
+  // Consulta avisos periodicamente para que caseta vea cambios sin recargar la pagina.
   useEffect(() => {
     requestNotificationPermission()
     load()
@@ -99,30 +82,29 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
       window.clearInterval(interval)
       window.removeEventListener("focus", onFocus)
     }
-  }, [])
+  }, [employee.id, employee.work_location])
 
-  // Abre el viaje relacionado con el aviso para que el guardia lo revise.
+  // Abrir tambien resuelve el aviso global, para que no siga en otros equipos.
   const handleOpen = async (notification: GuardNotification) => {
-    const trip = await getTripByCode(notification.folio)
+    await acknowledgeGuardNotification(notification.id)
+    const trip = await getTripByCode(notification.folio, employee)
     if (trip) {
       setOpen(false)
       onOpenTrip(trip)
     }
+    await load()
   }
 
-  // Marca un aviso individual como leído o resuelto.
+  // Marca un aviso individual como leido o resuelto.
   const handleAcknowledge = async (notification: GuardNotification) => {
     await acknowledgeGuardNotification(notification.id)
-    readIdsRef.current.add(notification.id)
-    writeStoredIds(readIdsRef.current)
     await load()
   }
 
   const handleAcknowledgeAll = async () => {
     for (const notification of pending) {
-      readIdsRef.current.add(notification.id)
+      await acknowledgeGuardNotification(notification.id)
     }
-    writeStoredIds(readIdsRef.current)
     await load()
   }
 
@@ -149,17 +131,18 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold">Notificaciones</p>
-              <p className="text-xs text-muted-foreground">Comentarios nuevos del chatter</p>
+              <p className="text-xs text-muted-foreground">
+                {employee.work_location ? `Almacen ${employee.work_location}` : "Comentarios nuevos del chatter"}
+              </p>
             </div>
             <Badge variant="secondary">{pending.length}</Badge>
           </div>
 
-          {/* Btn Maracar todas las notificaciones como leidas */}
-          {/* {pending.length > 0 && (
+          {pending.length > 0 && (
             <Button type="button" variant="ghost" size="sm" className="mb-3 w-full" onClick={handleAcknowledgeAll}>
-              Marcar todas como leídas
+              Marcar todas como leidas
             </Button>
-          )} */}
+          )}
 
           {pending.length === 0 ? (
             <div className="rounded-lg bg-secondary/50 p-4 text-center text-sm text-muted-foreground">
@@ -170,9 +153,12 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
               {pending.map((notification) => (
                 <div key={notification.id} className="rounded-lg border border-border bg-secondary/40 p-3">
                   <p className="font-semibold">{notification.title || notification.folio}</p>
-                  <p className="mt-1 text-sm text-muted-foreground whitespace-pre-line">{notification.message}</p>
+                  <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{notification.message}</p>
                   {notification.date && (
                     <p className="mt-2 text-xs text-muted-foreground">{notification.date}</p>
+                  )}
+                  {notification.almacen && (
+                    <p className="mt-1 text-xs font-medium text-muted-foreground">Almacen: {notification.almacen}</p>
                   )}
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <Button size="sm" onClick={() => handleOpen(notification)}>

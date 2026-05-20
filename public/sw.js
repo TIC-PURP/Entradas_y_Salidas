@@ -2,7 +2,6 @@
 
 const CACHE_NAME = "entradas-salidas-static-v1";
 const STATIC_ASSETS = [
-  "/",
   "/manifest.json",
   "/icons/icon-192x192.png",
   "/icons/icon-512x512.png",
@@ -36,6 +35,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname.startsWith("/_next/")) return;
+  if (request.headers.get("accept")?.includes("text/html")) return;
 
   event.respondWith(
     caches.match(request).then((cached) => {

@@ -18,6 +18,8 @@ export interface EmployeeSession {
   job_title?: string;
   department?: string;
   work_location?: string;
+  work_location_id?: number;
+  can_view_all_locations?: boolean;
 }
 
 export interface Trip {
@@ -25,6 +27,7 @@ export interface Trip {
   folio: string;
   orden: string;
   movimiento_origen?: string;
+  almacen?: string;
   chofer: string;
   placas: string;
   linea_fletera: string;
@@ -33,6 +36,7 @@ export interface Trip {
   fecha_salida?: string;
   operador_entrada?: string;
   operador_salida?: string;
+  planta?: string;
 }
 
 // Estados de un acceso manual: entró, sigue dentro o ya salió.
@@ -51,6 +55,7 @@ export interface AccessRecord {
   fecha_salida?: string;
   operador_entrada?: string;
   operador_salida?: string;
+  planta?: string;
 }
 
 // Textos amigables que se muestran al usuario en lugar de claves técnicas.
@@ -91,6 +96,7 @@ export interface GuardNotification {
   folio: string;
   message: string;
   title?: string;
+  almacen?: string;
   tripId?: number;
   messageId?: number;
   date?: string;
@@ -104,4 +110,11 @@ export interface FleetVehicle {
   license_plate?: string;
   driver?: string;
   state?: string;
+}
+
+
+// Resultado usado cuando se escanea el gafete de un empleado para acceso manual.
+export interface EmployeeAccessLookup {
+  employee: EmployeeSession;
+  openAccess: AccessRecord | null;
 }

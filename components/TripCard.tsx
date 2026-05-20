@@ -39,7 +39,7 @@ export default function TripCard({ viaje, onAction }: Props) {
                 await onAction(viaje.id, 'en_espera');
                 setLoading(false);
               }}
-              className="py-1 px-3 bg-success text-white rounded-md hover:bg-green-600"
+              className="py-1 px-3 bg-success text-white rounded-md hover:bg-success"
               disabled={loading}
             >
               Validar entrada
@@ -65,7 +65,7 @@ export default function TripCard({ viaje, onAction }: Props) {
               await onAction(viaje.id, 'en_espera');
               setLoading(false);
             }}
-            className="py-1 px-3 bg-success text-white rounded-md hover:bg-green-600"
+            className="py-1 px-3 bg-success text-white rounded-md hover:bg-success"
             disabled={loading}
           >
             Validar corrección
@@ -79,7 +79,7 @@ export default function TripCard({ viaje, onAction }: Props) {
               await onAction(viaje.id, 'finalizado');
               setLoading(false);
             }}
-            className="py-1 px-3 bg-success text-white rounded-md hover:bg-green-600"
+            className="py-1 px-3 bg-success text-white rounded-md hover:bg-success"
             disabled={loading}
           >
             Confirmar salida

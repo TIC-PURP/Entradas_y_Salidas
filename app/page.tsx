@@ -2,21 +2,23 @@
 
 // Pantalla principal de caseta: escanea códigos, busca viajes y muestra el resultado al guardia.
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Scanner } from "@/components/scanner";
 import { TripCard } from "@/components/trip-card";
 import { ManualMode } from "@/components/manual-mode";
 import { EmployeeSession, Trip } from "@/lib/types";
-import { getTripByCode } from "@/lib/api";
+import { getTripByCode, lookupEmployeeAccess } from "@/lib/api";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { NotificationsButton } from "@/components/notifications-button";
 import { clearStoredEmployee, EmployeeLogin } from "@/components/employee-login";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { LogOut, UserCheck } from "lucide-react";
+import { AccessControl } from "@/components/access-control";
 
 // Vistas posibles de la pantalla principal: cámara, detalle del viaje o búsqueda manual.
-type AppView = "scanner" | "trip" | "manual";
+type AppView = "scanner" | "trip" | "manual" | "access";
 
 export default function Home() {
   // Guarda qué pantalla ve el guardia en este momento.
@@ -27,31 +29,54 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   // Empleado operativo autenticado en la PWA. No es usuario de Odoo; es hr.employee.
   const [employee, setEmployee] = useState<EmployeeSession | null>(null);
+  const [accessPrefillName, setAccessPrefillName] = useState("");
+  const [accessSearch, setAccessSearch] = useState("");
+  const [accessEmployeeId, setAccessEmployeeId] = useState<number | undefined>(undefined);
+  const scanInFlightRef = useRef(false);
 
   // Cuando la cámara o el modo manual entregan un código, se busca el viaje correspondiente.
   const handleScan = useCallback(async (code: string) => {
-    if (isLoading) return;
+    if (isLoading || scanInFlightRef.current) return;
     
+    scanInFlightRef.current = true;
     setIsLoading(true);
     try {
-      const trip = await getTripByCode(code);
+      const trip = await getTripByCode(code, employee || undefined);
       if (trip) {
         setSelectedTrip(trip);
         setView("trip");
         toast.success(`Viaje ${trip.folio} encontrado`);
-      } else {
-        toast.error("Código no encontrado", {
-          description: `No se encontró ningún viaje con el código: ${code}`,
-        });
+        return;
       }
-    } catch {
-      toast.error("Error al buscar", {
-        description: "Ocurrió un error al buscar el viaje. Intenta de nuevo.",
+
+      const accessLookup = await lookupEmployeeAccess(code);
+      if (accessLookup.openAccess) {
+        setAccessPrefillName("");
+        setAccessSearch(accessLookup.employee.name);
+        setAccessEmployeeId(accessLookup.employee.id);
+        setView("access");
+        toast.info("Empleado con entrada activa", {
+          description: `${accessLookup.employee.name}. Abre su registro para confirmar salida.`,
+        });
+        return;
+      }
+
+      setAccessPrefillName(accessLookup.employee.name);
+      setAccessSearch(accessLookup.employee.name);
+      setAccessEmployeeId(accessLookup.employee.id);
+      setView("access");
+      toast.success("Empleado encontrado", {
+        description: `${accessLookup.employee.name}. Completa vehículo y registra entrada.`,
+      });
+    } catch (error) {
+      toast.error("Código no encontrado", {
+        description: error instanceof Error ? error.message : "No se encontró viaje ni empleado con ese código.",
       });
     } finally {
       setIsLoading(false);
+      scanInFlightRef.current = false;
     }
-  }, [isLoading]);
+  }, [employee, isLoading]);
 
   // Refresca la tarjeta cuando una acción cambia el estado del viaje.
   const handleTripUpdate = useCallback((updatedTrip: Trip) => {
@@ -69,6 +94,9 @@ export default function Home() {
 
   const handleBack = useCallback(() => {
     setSelectedTrip(null);
+    setAccessPrefillName("");
+    setAccessSearch("");
+    setAccessEmployeeId(undefined);
     setView("scanner");
   }, []);
 
@@ -106,18 +134,29 @@ export default function Home() {
               <UserCheck className="h-4 w-4 text-primary" />
               <span className="truncate">{employee.name}</span>
             </div>
-            <p className="truncate text-xs text-muted-foreground">
-              {employee.job_title || employee.department || "Operador PWA"}
-            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <p className="truncate text-xs text-muted-foreground">
+                {employee.job_title || employee.department || "Operador PWA"}
+              </p>
+              {employee.work_location && (
+                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                  {employee.work_location}
+                </Badge>
+              )}
+              {employee.can_view_all_locations && (
+                <Badge className="h-5 px-1.5 text-[10px]">
+                  Supervisor
+                </Badge>
+              )}
+            </div>
           </div>
           <Button variant="secondary" size="sm" onClick={handleLogout}>
             <LogOut className="mr-1 h-4 w-4" />
-            Salir
           </Button>
         </div>
       </div>
       {/* Botón de avisos: si logística manda una alerta, el guardia puede abrir el viaje relacionado. */}
-      <NotificationsButton onOpenTrip={(trip) => { setSelectedTrip(trip); setView("trip"); }} />
+      <NotificationsButton employee={employee} onOpenTrip={(trip) => { setSelectedTrip(trip); setView("trip"); }} />
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col p-3 sm:p-4 lg:p-6">
         {/* Pantalla normal: abre la cámara para escanear códigos. */}
         {view === "scanner" && (
@@ -144,6 +183,17 @@ export default function Home() {
             onSelectTrip={handleSelectTrip}
             onBack={handleBackToScanner}
             employee={employee}
+          />
+        )}
+
+        {view === "access" && (
+          <AccessControl
+            onBack={handleBackToScanner}
+            employee={employee}
+            prefillName={accessPrefillName}
+            initialSearch={accessSearch}
+            autoCreate={Boolean(accessPrefillName)}
+            prefillEmployeeId={accessEmployeeId}
           />
         )}
       </div>

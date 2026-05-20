@@ -6,6 +6,7 @@ type OdooIdName = false | [number, string]
 
 type OdooTrip = {
   id: number
+  [key: string]: unknown
   x_name?: string
   x_studio_orden_de_venta?: OdooIdName
   x_studio_transferencia?: OdooIdName
@@ -21,6 +22,7 @@ type OdooTrip = {
 
 type OdooAccess = {
   id: number
+  [key: string]: unknown
   x_name?: string
   x_studio_vehiculo?: string
   x_studio_vehiculo_purp?: OdooIdName
@@ -88,10 +90,16 @@ const cfg = () => ({
   viajesModel: process.env.ODOO_VIAJES_MODEL?.trim() || "x_viajes",
   accessModel: process.env.ODOO_ACCESS_MODEL?.trim() || "x_control_de_acceso",
   notifyField: process.env.ODOO_NOTIFY_FIELD?.trim() || "x_studio_notificar_guardia",
+  tripWarehouseField: process.env.ODOO_TRIP_WAREHOUSE_FIELD?.trim() || "x_studio_related_field_7jn_1jn076pgg",
+  notificationAckParamKey: process.env.ODOO_NOTIFICATION_ACK_PARAM_KEY?.trim() || "entradas_salidas.guard_notifications.acknowledged.v1",
   tripOperatorEntryField: process.env.ODOO_TRIP_OPERATOR_ENTRY_FIELD?.trim() || "x_studio_operador_entrada",
   tripOperatorExitField: process.env.ODOO_TRIP_OPERATOR_EXIT_FIELD?.trim() || "x_studio_operador_salida",
   accessOperatorEntryField: process.env.ODOO_ACCESS_OPERATOR_ENTRY_FIELD?.trim() || "x_studio_operador_entrada",
   accessOperatorExitField: process.env.ODOO_ACCESS_OPERATOR_EXIT_FIELD?.trim() || "x_studio_operador_salida",
+  employeeWorkLocationField: process.env.ODOO_EMPLOYEE_WORK_LOCATION_FIELD?.trim() || "work_location_id",
+  accessPersonEmployeeField: process.env.ODOO_ACCESS_PERSON_EMPLOYEE_FIELD?.trim() || "x_studio_empleado_visitante",
+  accessPlantField: process.env.ODOO_ACCESS_PLANT_FIELD?.trim() || "x_studio_planta_pwa",
+  supervisorCanViewAll: (process.env.ODOO_SUPERVISOR_CAN_VIEW_ALL ?? "true").toLowerCase() !== "false",
   employeeCodeFields: (process.env.ODOO_EMPLOYEE_CODE_FIELDS || "barcode,pin,identification_id,registration_number")
     .split(",")
     .map((field) => field.trim())
@@ -206,6 +214,25 @@ function nameOf(value?: OdooIdName | number | string) {
   return String(value || "")
 }
 
+function normalizeLocation(value?: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+}
+
+function canViewAllLocations(employee?: { can_view_all_locations?: boolean }) {
+  return Boolean(employee?.can_view_all_locations)
+}
+
+function locationsMatch(employeeLocation?: unknown, tripWarehouse?: unknown) {
+  const employee = normalizeLocation(employeeLocation)
+  const warehouse = normalizeLocation(tripWarehouse)
+  if (!employee || !warehouse) return true
+  return employee.includes(warehouse) || warehouse.includes(employee)
+}
+
 function nowOdooDatetime() {
   return new Date().toISOString().slice(0, 19).replace("T", " ")
 }
@@ -221,11 +248,15 @@ function toOdooDatetime(value: unknown) {
 
 // Convierte un registro de viaje de Odoo al formato simple que entienden las pantallas.
 function mapTrip(record: OdooTrip) {
+  const warehouseField = cfg().tripWarehouseField
+  const almacen = nameOf(record[warehouseField] as OdooIdName | number | string)
   return {
     id: record.id,
     folio: record.x_name || "",
     orden: nameOf(record.x_studio_orden_de_venta),
     movimiento_origen: nameOf(record.x_studio_transferencia),
+    almacen,
+    planta: almacen,
     chofer: record.x_studio_chofer || "",
     placas: record.x_studio_placa || "",
     linea_fletera: nameOf(record.x_studio_linea_fletera_1),
@@ -239,6 +270,7 @@ function mapTrip(record: OdooTrip) {
 
 // Convierte un acceso manual de Odoo al formato que muestra la app.
 function mapAccess(record: OdooAccess) {
+  const accessPlantField = cfg().accessPlantField
   const odooStatus = record.x_studio_selection_field_87c_1jnb97pu7 || "status2"
   return {
     id: String(record.id),
@@ -251,6 +283,7 @@ function mapAccess(record: OdooAccess) {
     fecha_salida: record.x_studio_salida_planta || undefined,
     operador_entrada: nameOf(record.x_studio_operador_entrada),
     operador_salida: nameOf(record.x_studio_operador_salida),
+    planta: nameOf(record[accessPlantField] as OdooIdName | number | string),
   }
 }
 
@@ -266,6 +299,7 @@ const tripFields = [
   "x_studio_salida",
   "x_studio_operador_entrada",
   "x_studio_operador_salida",
+  cfg().tripWarehouseField,
 ]
 
 const accessFields = [
@@ -278,6 +312,7 @@ const accessFields = [
   "x_studio_selection_field_87c_1jnb97pu7",
   "x_studio_operador_entrada",
   "x_studio_operador_salida",
+  cfg().accessPlantField,
 ]
 
 
@@ -330,9 +365,12 @@ async function employeeLogin(code: string) {
     "name",
     "job_title",
     "department_id",
+    c.employeeWorkLocationField,
     "work_location_id",
     "work_location_name",
     "active",
+    "parent_id",
+    "child_count",
   ])
 
   type EmployeeLoginRecord = {
@@ -342,7 +380,10 @@ async function employeeLogin(code: string) {
     department_id?: OdooIdName
     work_location_id?: OdooIdName
     work_location_name?: string
+    [key: string]: unknown
     active?: boolean
+    parent_id?: OdooIdName
+    child_count?: number
   }
 
   let records: EmployeeLoginRecord[]
@@ -377,12 +418,54 @@ async function employeeLogin(code: string) {
     )
   }
 
+  const locationValue = employee[c.employeeWorkLocationField] as OdooIdName | string | undefined
+  const defaultLocation = employee.work_location_id
+
+  let canViewAll = false
+  if (c.supervisorCanViewAll) {
+    if (Number(employee.child_count || 0) > 0) {
+      canViewAll = true
+    } else {
+      try {
+        const subordinates = await callKw<number>("hr.employee", "search_count", [[["parent_id", "=", employee.id], ["active", "=", true]]])
+        canViewAll = subordinates > 0
+      } catch (error) {
+        console.warn("No pude validar subordinados del empleado para permisos de supervisor.", error)
+      }
+    }
+  }
+
   return {
     id: employee.id,
     name: employee.name || `Empleado ${employee.id}`,
     job_title: employee.job_title || "",
     department: nameOf(employee.department_id),
-    work_location: nameOf(employee.work_location_id) || employee.work_location_name || "",
+    work_location: nameOf(locationValue) || nameOf(defaultLocation) || employee.work_location_name || "",
+    work_location_id: Array.isArray(locationValue) ? locationValue[0] : Array.isArray(defaultLocation) ? defaultLocation[0] : undefined,
+    can_view_all_locations: canViewAll,
+  }
+}
+
+async function lookupEmployeeAccess(code: string) {
+  const c = cfg()
+  const employee = await employeeLogin(code)
+  const accessFieldsSet = await getModelFields(c.accessModel!)
+
+  const openDomainBase: unknown[] = [["x_studio_selection_field_87c_1jnb97pu7", "!=", "status3"]]
+  let domain: unknown[] = []
+
+  if (accessFieldsSet.has(c.accessPersonEmployeeField)) {
+    domain = andDomain(openDomainBase, [[c.accessPersonEmployeeField, "=", employee.id]])
+  } else {
+    // Fallback sin campo many2one del visitante: busca por el nombre guardado en x_name.
+    domain = andDomain(openDomainBase, [["x_name", "=ilike", employee.name]])
+  }
+
+  const records = await searchRead<OdooAccess>(c.accessModel!, domain, accessFields, { limit: 1, order: "id desc" })
+
+  return {
+    employee,
+    openAccess: records[0] ? mapAccess(records[0]) : null,
   }
 }
 
@@ -399,23 +482,48 @@ async function safeWrite(model: string, ids: number[], values: Record<string, un
   }
 }
 
-async function getTrips(domain: unknown[] = []) {
+async function getTrips(domain: unknown[] = [], employee?: { id?: number; work_location?: string; work_location_id?: number; can_view_all_locations?: boolean }) {
   const c = cfg()
-  const records = await searchRead<OdooTrip>(c.viajesModel!, domain, tripFields, { limit: 100, order: "id desc" })
-  return records.map(mapTrip)
+  const locationDomain = employeeTripDomain(employee)
+  const finalDomain = andDomain(domain, locationDomain)
+  const records = await searchRead<OdooTrip>(c.viajesModel!, finalDomain, tripFields, { limit: 100, order: "id desc" })
+  const mapped = records.map(mapTrip)
+  if (canViewAllLocations(employee)) return mapped
+  return mapped.filter((trip) => locationsMatch(employee?.work_location, trip.almacen))
+}
+
+function employeeTripDomain(employee?: { id?: number; work_location?: string; work_location_id?: number; can_view_all_locations?: boolean }) {
+  const c = cfg()
+  if (canViewAllLocations(employee)) return []
+  if (!employee?.work_location && !employee?.work_location_id) return []
+
+  // Si el campo de almacén del viaje es many2one, el filtro por ID es el más confiable.
+  // Si no coincide con el ID de ubicación de trabajo, se aplica también un filtro ilike por nombre.
+  const parts: unknown[][] = []
+  if (employee.work_location_id) parts.push([c.tripWarehouseField, "=", Number(employee.work_location_id)])
+  if (employee.work_location) parts.push([c.tripWarehouseField, "ilike", String(employee.work_location)])
+
+  return orDomain(parts)
+}
+
+function andDomain(...domains: unknown[][]) {
+  const clean = domains.filter((domain) => Array.isArray(domain) && domain.length > 0)
+  if (clean.length === 0) return []
+  if (clean.length === 1) return clean[0]
+  return [...Array(clean.length - 1).fill("&"), ...clean.flat()]
 }
 
 // Busca un viaje usando el dato escaneado o escrito: folio, orden o placas.
-async function getTripByCode(code: string) {
+async function getTripByCode(code: string, employee?: { id?: number; work_location?: string; work_location_id?: number; can_view_all_locations?: boolean }) {
   const c = cfg()
   const clean = String(code || "").trim()
   const available = await getModelFields(c.viajesModel!)
-  const searchFields = ["x_name", "x_studio_placa", "x_studio_chofer", "x_studio_orden_de_venta"].filter((field) => available.has(field))
-  const domain = orDomain(searchFields.map((field) => [field, "=ilike", clean]))
-  const records = await searchRead<OdooTrip>(c.viajesModel!, domain, tripFields, { limit: 1 })
-  const trip = records[0] ? mapTrip(records[0]) : null
-  if (trip?.estado === "planeado") return null
-  return trip
+  const searchFields = ["x_name", "x_studio_placa", "x_studio_chofer"].filter((field) => available.has(field))
+  const searchDomain = orDomain(searchFields.map((field) => [field, "=ilike", clean]))
+  const domain = andDomain(searchDomain, employeeTripDomain(employee))
+  const records = await searchRead<OdooTrip>(c.viajesModel!, domain, tripFields, { limit: 5 })
+  const trips = records.map(mapTrip).filter((trip) => trip.estado !== "planeado" && (canViewAllLocations(employee) || locationsMatch(employee?.work_location, trip.almacen)))
+  return trips[0] || null
 }
 
 // Actualiza el estado del viaje y guarda fechas de entrada o salida cuando aplica.
@@ -439,6 +547,9 @@ async function updateTripStatus(folio: string, newStatus: string, additionalData
   }
 
   await safeWrite(c.viajesModel!, [trip.id], values, fallbackValues)
+  if (["en_espera", "en_revision", "finalizado"].includes(newStatus)) {
+    await acknowledgeTripNotifications(trip.id)
+  }
   return getTripByCode(folio)
 }
 
@@ -522,15 +633,24 @@ async function findFleetVehicleId(value?: string) {
   return found?.[0]?.[0] || null
 }
 
-async function getAccessRecords() {
+async function getAccessRecords(employee?: { id?: number; work_location?: string; work_location_id?: number; can_view_all_locations?: boolean }) {
   const c = cfg()
+  const available = await getModelFields(c.accessModel!)
+  let domain: unknown[] = [["x_studio_selection_field_87c_1jnb97pu7", "!=", "status3"]]
+
+  if (!canViewAllLocations(employee) && employee?.work_location && available.has(c.accessPlantField)) {
+    domain = andDomain(domain, [[c.accessPlantField, "ilike", String(employee.work_location)]])
+  }
+
   const records = await searchRead<OdooAccess>(
     c.accessModel!,
-    [["x_studio_selection_field_87c_1jnb97pu7", "!=", "status3"]],
+    domain,
     accessFields,
     { limit: 100, order: "id desc" },
   )
-  return records.map(mapAccess)
+  const mapped = records.map(mapAccess)
+  if (canViewAllLocations(employee)) return mapped
+  return mapped.filter((record) => !record.planta || locationsMatch(employee?.work_location, record.planta))
 }
 
 // Crea en Odoo una entrada manual para visitante, proveedor o unidad interna.
@@ -548,6 +668,15 @@ async function createAccessRecord(data: any) {
   const employeeId = Number(data.employeeId)
   if (Number.isFinite(employeeId) && employeeId > 0) {
     values[c.accessOperatorEntryField] = employeeId
+  }
+
+  const accessEmployeeId = Number(data.accessEmployeeId)
+  if (Number.isFinite(accessEmployeeId) && accessEmployeeId > 0) {
+    values[c.accessPersonEmployeeField] = accessEmployeeId
+  }
+
+  if (data.work_location) {
+    values[c.accessPlantField] = String(data.work_location)
   }
 
   if (vehicleType === "Vehículo PURP") {
@@ -612,21 +741,103 @@ function hoursAgoOdooDatetime(hours: number) {
   return new Date(Date.now() - safeHours * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ")
 }
 
+type AckCache = {
+  ids: Set<string>
+  loadedAt: number
+  persistAvailable?: boolean
+}
+
+const globalForNotifications = globalThis as typeof globalThis & {
+  __guardNotificationAckCache?: AckCache
+}
+
+const ackCache = globalForNotifications.__guardNotificationAckCache ?? {
+  ids: new Set<string>(),
+  loadedAt: 0,
+}
+
+globalForNotifications.__guardNotificationAckCache = ackCache
+
+async function readAcknowledgedNotificationIds() {
+  const c = cfg()
+  if (Date.now() - ackCache.loadedAt < 10_000) return ackCache.ids
+
+  try {
+    const value = await callKw<string | false>("ir.config_parameter", "get_param", [c.notificationAckParamKey])
+    const parsed = JSON.parse(String(value || "[]"))
+    ackCache.ids = new Set(Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [])
+    ackCache.persistAvailable = true
+  } catch (error) {
+    ackCache.persistAvailable = false
+    console.warn("No pude leer notificaciones atendidas en ir.config_parameter. Uso memoria del servidor.", error)
+  }
+
+  ackCache.loadedAt = Date.now()
+  return ackCache.ids
+}
+
+async function writeAcknowledgedNotificationIds(ids: Set<string>) {
+  const c = cfg()
+  const limited = Array.from(ids).slice(-1000)
+  ackCache.ids = new Set(limited)
+  ackCache.loadedAt = Date.now()
+
+  try {
+    await callKw<boolean>("ir.config_parameter", "set_param", [c.notificationAckParamKey, JSON.stringify(limited)])
+    ackCache.persistAvailable = true
+  } catch (error: any) {
+    ackCache.persistAvailable = false
+    throw new Error(`No pude guardar la notificación como enterada de forma global en Odoo. Da permisos de Ajustes/Parámetros del sistema al usuario API o crea acceso a ir.config_parameter. Detalle: ${error?.message || error}`)
+  }
+}
+
+async function acknowledgeTripNotifications(tripId?: number) {
+  if (!tripId) return
+  const c = cfg()
+  const messages = await searchRead<OdooChatterMessage>(
+    "mail.message",
+    [
+      ["model", "=", c.viajesModel],
+      ["res_id", "=", tripId],
+      ["message_type", "=", "comment"],
+      ["date", ">=", hoursAgoOdooDatetime(c.chatterLookbackHours)],
+    ],
+    ["id"],
+    { limit: 100 },
+  )
+  const ids = await readAcknowledgedNotificationIds()
+  for (const message of messages) {
+    ids.add(`mail.message:${message.id}`)
+  }
+  await writeAcknowledgedNotificationIds(ids)
+}
+
 // Revisa mensajes recientes y banderas de Odoo para avisar a caseta sobre correcciones o pendientes.
-async function getGuardNotifications() {
+async function getGuardNotifications(employee?: { id?: number; work_location?: string; can_view_all_locations?: boolean }) {
   const c = cfg()
 
-  const trips = await searchRead<OdooTrip>(c.viajesModel!, [], ["x_name", "x_studio_selection_field_8eu_1jmu93j7v"], {
+  const tripFieldsForNotifications = ["x_name", "x_studio_selection_field_8eu_1jmu93j7v", c.tripWarehouseField]
+  const trips = await searchRead<OdooTrip>(c.viajesModel!, [], tripFieldsForNotifications, {
     limit: 200,
     order: "id desc",
   })
 
-  const tripById = new Map<number, string>()
+  const tripById = new Map<number, { folio: string; status: string; warehouse: string }>()
   for (const trip of trips) {
-    if (trip.id && trip.x_name) tripById.set(trip.id, trip.x_name)
+    const status = STATUS_FROM_ODOO[trip.x_studio_selection_field_8eu_1jmu93j7v || ""] || "en_camino"
+    const warehouse = nameOf(trip[c.tripWarehouseField] as OdooIdName | number | string)
+    if (
+      trip.id &&
+      trip.x_name &&
+      ["en_camino", "en_revision"].includes(status) &&
+(canViewAllLocations(employee) || locationsMatch(employee?.work_location, warehouse))
+    ) {
+      tripById.set(trip.id, { folio: trip.x_name, status, warehouse })
+    }
   }
 
   if (tripById.size === 0) return []
+  const acknowledgedIds = await readAcknowledgedNotificationIds()
 
   const domain: unknown[] = [
     ["model", "=", c.viajesModel],
@@ -642,7 +853,8 @@ async function getGuardNotifications() {
 
   return records
     .map((message) => {
-      const folio = tripById.get(message.res_id) || String(message.res_id)
+      const trip = tripById.get(message.res_id)
+      const folio = trip?.folio || String(message.res_id)
       const author = nameOf(message.author_id)
       const body = stripHtml(message.body)
       const prefix = author ? `${author}: ` : ""
@@ -650,19 +862,21 @@ async function getGuardNotifications() {
         id: `mail.message:${message.id}`,
         messageId: message.id,
         folio,
+        almacen: trip?.warehouse,
         tripId: message.res_id,
         title: `Nuevo comentario en ${folio}`,
         message: body ? `${prefix}${body}` : `${prefix}Se agregó un comentario al chatter.`,
         date: message.date,
       }
     })
-    .filter((item) => item.message.trim().length > 0)
+    .filter((item) => item.message.trim().length > 0 && !acknowledgedIds.has(item.id))
 }
 
 // Marca una notificación como atendida para que no siga apareciendo al guardia.
 async function acknowledgeGuardNotification(id: string) {
-  // Las notificaciones de chatter se marcan como leídas del lado de la PWA
-  // con localStorage. No se modifica el mensaje original en Odoo.
+  const ids = await readAcknowledgedNotificationIds()
+  ids.add(String(id))
+  await writeAcknowledgedNotificationIds(ids)
   return { ok: true, id }
 }
 
@@ -675,14 +889,15 @@ export async function POST(req: Request) {
 
     if (action === "ping") data = { uid: await authenticate(), ok: true }
     else if (action === "employeeLogin") data = await employeeLogin(body.code)
-    else if (action === "getTripByCode") data = await getTripByCode(body.code)
-    else if (action === "getAllTrips") data = await getTrips([["x_studio_selection_field_8eu_1jmu93j7v", "!=", "status1"]])
+    else if (action === "lookupEmployeeAccess") data = await lookupEmployeeAccess(body.code)
+    else if (action === "getTripByCode") data = await getTripByCode(body.code, body.employee)
+    else if (action === "getAllTrips") data = await getTrips([["x_studio_selection_field_8eu_1jmu93j7v", "!=", "status1"]], body.employee)
     else if (action === "updateTripStatus") data = await updateTripStatus(body.folio, body.newStatus, body.additionalData || {})
-    else if (action === "getAccessRecords") data = await getAccessRecords()
+    else if (action === "getAccessRecords") data = await getAccessRecords(body.employee)
     else if (action === "createAccessRecord") data = await createAccessRecord(body.data)
     else if (action === "registerAccessExit") data = await registerAccessExit(body.id, body.employeeId)
     else if (action === "getFleetVehicles") data = await getFleetVehicles()
-    else if (action === "getGuardNotifications") data = await getGuardNotifications()
+    else if (action === "getGuardNotifications") data = await getGuardNotifications(body.employee)
     else if (action === "acknowledgeGuardNotification") data = await acknowledgeGuardNotification(body.id)
     else throw new Error(`Acción no soportada: ${action}`)
 

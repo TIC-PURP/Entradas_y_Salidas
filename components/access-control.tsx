@@ -3,7 +3,7 @@
 // Interfaz de apoyo para registrar accesos y salidas de visitantes o unidades internas.
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, ArrowLeft, Car, Clock, LogOut, Plus, RefreshCw, Search, User } from "lucide-react";
+import { AlertCircle, ArrowLeft, Building2, Car, Clock, LogOut, Plus, RefreshCw, Search, User } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,18 +16,22 @@ import { createAccessRecord, getAccessRecords, getFleetVehicles, registerAccessE
 interface AccessControlProps {
   onBack: () => void;
   employee: EmployeeSession;
+  prefillName?: string;
+  initialSearch?: string;
+  autoCreate?: boolean;
+  prefillEmployeeId?: number;
 }
 
 // Control completo de accesos manuales usado cuando se necesita una vista dedicada.
-export function AccessControl({ onBack, employee }: AccessControlProps) {
+export function AccessControl({ onBack, employee, prefillName = "", initialSearch = "", autoCreate = false, prefillEmployeeId }: AccessControlProps) {
   const [records, setRecords] = useState<AccessRecord[]>([]);
   const [fleetVehicles, setFleetVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [fleetLoading, setFleetLoading] = useState(false);
   const [fleetError, setFleetError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [search, setSearch] = useState("");
-  const [nombre, setNombre] = useState("");
+  const [creating, setCreating] = useState(autoCreate);
+  const [search, setSearch] = useState(initialSearch);
+  const [nombre, setNombre] = useState(prefillName);
   const [vehiculo, setVehiculo] = useState<VehicleType>("Vehículo PURP");
   const [vehiculoPurp, setVehiculoPurp] = useState("");
   const [descripcionVehiculo, setDescripcionVehiculo] = useState("");
@@ -36,12 +40,20 @@ export function AccessControl({ onBack, employee }: AccessControlProps) {
   useEffect(() => {
     loadRecords();
     loadFleetVehicles();
-  }, []);
+  }, [employee]);
+
+  useEffect(() => {
+    if (prefillName) {
+      setNombre(prefillName);
+      setCreating(true);
+    }
+    if (initialSearch) setSearch(initialSearch);
+  }, [prefillName, initialSearch]);
 
   const loadRecords = async () => {
     setLoading(true);
     try {
-      setRecords(await getAccessRecords());
+      setRecords(await getAccessRecords(employee));
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudieron cargar los registros de acceso";
       toast.error(message);
@@ -123,6 +135,8 @@ export function AccessControl({ onBack, employee }: AccessControlProps) {
         vehiculo_purp: vehiculoPurp,
         descripcion_vehiculo: descripcionVehiculo.trim(),
         employeeId: employee.id,
+        accessEmployeeId: prefillEmployeeId,
+        work_location: employee.work_location,
       });
       setRecords((prev) => [record, ...prev]);
       setNombre("");
@@ -159,9 +173,14 @@ export function AccessControl({ onBack, employee }: AccessControlProps) {
         </Button>
       ) : (
         <Card className="border-border">
-          <CardHeader className="font-semibold">Registrar entrada manual</CardHeader>
+          <CardHeader className="font-semibold">{prefillName ? "Registrar entrada de empleado" : "Registrar entrada manual"}</CardHeader>
           <CardContent className="space-y-4">
-            <Input placeholder="Nombre visitante..." className="h-12 text-base" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+            <Input placeholder="Nombre visitante o empleado..." className="h-12 text-base" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+            {prefillName && (
+              <div className="rounded-md border border-primary/30 bg-primary/10 p-3 text-sm text-primary">
+                Gafete detectado
+              </div>
+            )}
             <select className="h-12 w-full rounded-md bg-secondary px-3 text-base border border-border" value={vehiculo} onChange={(e) => setVehiculo(e.target.value as VehicleType)}>
               <option>Vehículo PURP</option>
               <option>Otro vehículo</option>
@@ -235,7 +254,15 @@ export function AccessControl({ onBack, employee }: AccessControlProps) {
                       <span className="break-words">{record.vehiculo === "Vehículo PURP" ? (vehicleNameById.get(String(record.vehiculo_purp)) || record.vehiculo_purp) : record.descripcion_vehiculo}</span>
                     </div>
                   </div>
-                  <Badge className={`w-fit ${ACCESS_STATUS_COLORS[record.estado]}`}>{ACCESS_STATUS_LABELS[record.estado]}</Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {record.planta && (
+                      <Badge variant="secondary" className="w-fit">
+                        <Building2 className="mr-1 h-3 w-3" />
+                        {record.planta}
+                      </Badge>
+                    )}
+                    <Badge className={`w-fit ${ACCESS_STATUS_COLORS[record.estado]}`}>{ACCESS_STATUS_LABELS[record.estado]}</Badge>
+                  </div>
                 </div>
 
                 <div className="grid gap-1 text-sm text-muted-foreground mb-3">

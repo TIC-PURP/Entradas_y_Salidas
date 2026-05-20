@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Scanner as QRScanner, IDetectedBarcode } from "@yudiel/react-qr-scanner";
 import { BadgeCheck, Camera, IdCard, LogIn, ScanLine, X } from "lucide-react";
 import { toast } from "sonner";
@@ -47,6 +47,7 @@ export function EmployeeLogin({ onLogin }: EmployeeLoginProps) {
   const [loading, setLoading] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
+  const scanLockedRef = useRef(false);
 
   useEffect(() => {
     const employee = getStoredEmployee();
@@ -72,15 +73,17 @@ export function EmployeeLogin({ onLogin }: EmployeeLoginProps) {
       });
     } finally {
       setLoading(false);
+      scanLockedRef.current = false;
     }
   };
 
   const handleCameraScan = (detectedCodes: IDetectedBarcode[]) => {
-    if (loading) return;
+    if (loading || scanLockedRef.current) return;
 
     const scannedCode = detectedCodes[0]?.rawValue?.trim();
     if (!scannedCode) return;
 
+    scanLockedRef.current = true;
     setCode(scannedCode);
     setScannerOpen(false);
     setScannerError(null);

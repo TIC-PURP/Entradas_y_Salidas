@@ -194,11 +194,19 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
                 {trip.folio}
               </h2>
             </div>
-            <Badge
-              className={`w-fit px-4 py-2 text-sm ${STATUS_COLORS[trip.estado]}`}
-            >
-              {STATUS_LABELS[trip.estado]}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              {trip.almacen && (
+                <Badge variant="secondary" className="w-fit px-4 py-2 text-sm">
+                  <Building2 className="mr-1 h-4 w-4" />
+                  {trip.almacen}
+                </Badge>
+              )}
+              <Badge
+                className={`w-fit px-4 py-2 text-sm ${STATUS_COLORS[trip.estado]}`}
+              >
+                {STATUS_LABELS[trip.estado]}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
 
