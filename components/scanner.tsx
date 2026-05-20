@@ -40,17 +40,17 @@ export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
   };
 
   return (
-    <div className="flex flex-col h-full gap-6">
+    <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-4 sm:gap-6">
       <div className="text-center">
-        <h1 className="text-2xl font-bold tracking-tight mb-2">
+        <h1 className="mb-2 text-2xl font-bold tracking-tight sm:text-3xl">
           Entradas y Salidas
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-sm text-muted-foreground sm:text-base">
           Escanea el código QR o de barras del camión
         </p>
       </div>
 
-      <Card className="relative flex-1 overflow-hidden border-2 border-border bg-card min-h-[300px]">
+      <Card className="relative min-h-[320px] flex-1 overflow-hidden border-2 border-border bg-card sm:min-h-[420px] lg:min-h-[520px]">
         {isLoading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-card z-10">
             <Spinner className="h-12 w-12 mb-4 text-primary" />
@@ -95,7 +95,7 @@ export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
             <div className="absolute inset-0 pointer-events-none">
               <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background/40" />
 
-              <div className="absolute inset-8 border-2 border-primary/50 rounded-lg">
+              <div className="absolute inset-6 rounded-lg border-2 border-primary/50 sm:inset-8 lg:inset-12">
                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-lg" />
                 <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-lg" />
                 <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-lg" />
@@ -105,7 +105,7 @@ export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
               </div>
             </div>
 
-            <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-sm">
+            <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-background/80 px-3 py-1.5 backdrop-blur-sm sm:left-4 sm:top-4">
               <Camera className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium">Cámara activa</span>
             </div>
@@ -113,7 +113,7 @@ export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
         )}
       </Card>
 
-      <div className="flex flex-col gap-3">
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-3">
         <div className="flex items-center justify-center gap-2 text-muted-foreground">
           <ScanLine className="h-5 w-5" />
           <span className="text-sm">Apunta al código QR o de barras</span>
@@ -122,7 +122,7 @@ export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
         <Button
           variant="secondary"
           size="lg"
-          className="h-14 text-lg"
+          className="h-14 text-base sm:text-lg"
           onClick={onManualMode}
         >
           <List className="mr-2 h-5 w-5" />

@@ -188,7 +188,6 @@ export function EmployeeLogin({ onLogin }: EmployeeLoginProps) {
                   },
                 }}
                 components={{
-                  audio: false,
                   torch: true,
                 }}
               />

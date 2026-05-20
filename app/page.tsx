@@ -98,9 +98,9 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col bg-background">
+    <main className="min-h-dvh flex flex-col bg-background">
       <div className="sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
-        <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <UserCheck className="h-4 w-4 text-primary" />
@@ -118,7 +118,7 @@ export default function Home() {
       </div>
       {/* Botón de avisos: si logística manda una alerta, el guardia puede abrir el viaje relacionado. */}
       <NotificationsButton onOpenTrip={(trip) => { setSelectedTrip(trip); setView("trip"); }} />
-      <div className="flex-1 flex flex-col max-w-lg mx-auto w-full p-4">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col p-3 sm:p-4 lg:p-6">
         {/* Pantalla normal: abre la cámara para escanear códigos. */}
         {view === "scanner" && (
           <Scanner

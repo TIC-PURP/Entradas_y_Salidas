@@ -3,6 +3,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import PWA from "@/components/pwa";
 import "./globals.css";
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -25,6 +26,16 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
+        url: "/icons/icon-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+      {
+        url: "/icons/icon-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
+      {
         url: "/icons/purp-icon.png",
         media: "(prefers-color-scheme: light)",
       },
@@ -40,8 +51,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
   themeColor: "#1a1a2e",
 };
@@ -53,8 +62,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className="bg-background">
-      <body className="font-sans antialiased">{children}
-      {process.env.NODE_ENV === "production" && <Analytics />}
+      <body className="font-sans antialiased">
+        <PWA />
+        {children}
+        {process.env.NODE_ENV === "production" && <Analytics />}
       </body>
     </html>
   );

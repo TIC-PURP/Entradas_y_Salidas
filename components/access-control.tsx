@@ -143,8 +143,8 @@ export function AccessControl({ onBack, employee }: AccessControlProps) {
   };
 
   return (
-    <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" size="lg" onClick={onBack}>
           <ArrowLeft className="mr-2 h-5 w-5" />
           Manual
@@ -202,7 +202,7 @@ export function AccessControl({ onBack, employee }: AccessControlProps) {
             ) : (
               <Input placeholder="Describe el vehículo..." className="h-12 text-base" value={descripcionVehiculo} onChange={(e) => setDescripcionVehiculo(e.target.value)} />
             )}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Button variant="secondary" size="lg" onClick={() => setCreating(false)}>Cancelar</Button>
               <Button size="lg" onClick={handleCreate} disabled={saving || (vehiculo === "Vehículo PURP" && (fleetLoading || fleetVehicles.length === 0))}>{saving ? <Spinner className="mr-2" /> : null}Registrar</Button>
             </div>
@@ -224,18 +224,18 @@ export function AccessControl({ onBack, employee }: AccessControlProps) {
           <div className="flex flex-col gap-3 pb-4">
             {filtered.map((record) => (
               <Card key={record.id} className="p-4 border-border">
-                <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="mb-1 flex items-center gap-2">
                       <User className="h-5 w-5 text-muted-foreground" />
-                      <span className="font-bold text-lg truncate">{record.nombre}</span>
+                      <span className="break-words text-lg font-bold">{record.nombre}</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Car className="h-4 w-4" />
-                      <span>{record.vehiculo === "Vehículo PURP" ? (vehicleNameById.get(String(record.vehiculo_purp)) || record.vehiculo_purp) : record.descripcion_vehiculo}</span>
+                      <span className="break-words">{record.vehiculo === "Vehículo PURP" ? (vehicleNameById.get(String(record.vehiculo_purp)) || record.vehiculo_purp) : record.descripcion_vehiculo}</span>
                     </div>
                   </div>
-                  <Badge className={ACCESS_STATUS_COLORS[record.estado]}>{ACCESS_STATUS_LABELS[record.estado]}</Badge>
+                  <Badge className={`w-fit ${ACCESS_STATUS_COLORS[record.estado]}`}>{ACCESS_STATUS_LABELS[record.estado]}</Badge>
                 </div>
 
                 <div className="grid gap-1 text-sm text-muted-foreground mb-3">

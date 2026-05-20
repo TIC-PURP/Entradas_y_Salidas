@@ -172,11 +172,11 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-col">
       <Button
         variant="ghost"
         size="lg"
-        className="self-start mb-4 text-muted-foreground hover:text-foreground"
+        className="mb-4 self-start text-muted-foreground hover:text-foreground"
         onClick={onBack}
       >
         <ArrowLeft className="mr-2 h-5 w-5" />
@@ -185,17 +185,17 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
 
       <Card className="flex-1 border-2 border-border bg-card">
         <CardHeader className="pb-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0">
               <p className="text-sm text-muted-foreground font-medium mb-1">
                 Folio
               </p>
-              <h2 className="text-3xl font-bold tracking-tight text-foreground">
+              <h2 className="break-words text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
                 {trip.folio}
               </h2>
             </div>
             <Badge
-              className={`text-sm px-4 py-2 ${STATUS_COLORS[trip.estado]}`}
+              className={`w-fit px-4 py-2 text-sm ${STATUS_COLORS[trip.estado]}`}
             >
               {STATUS_LABELS[trip.estado]}
             </Badge>
@@ -203,7 +203,7 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          <div className="grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <InfoRow
               icon={<FileText className="h-5 w-5" />}
               label="Orden de Venta"
@@ -289,13 +289,13 @@ function InfoRow({
   value: string;
 }) {
   return (
-    <div className="flex items-center gap-4 p-4 rounded-lg bg-secondary/50">
+    <div className="flex items-center gap-4 rounded-lg bg-secondary/50 p-4">
       <div className="text-muted-foreground">{icon}</div>
       <div className="flex-1 min-w-0">
         <p className="text-xs text-muted-foreground uppercase tracking-wide">
           {label}
         </p>
-        <p className="text-lg font-semibold truncate">{value}</p>
+        <p className="break-words text-base font-semibold sm:text-lg">{value}</p>
       </div>
     </div>
   );

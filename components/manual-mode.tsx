@@ -74,8 +74,8 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
 
   if (view === "menu") {
     return (
-      <div className="flex flex-col h-full gap-4">
-        <div className="flex items-center justify-between">
+      <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <Button variant="ghost" size="lg" onClick={onBack}>
             <ArrowLeft className="mr-2 h-5 w-5" />
             Escanear
@@ -86,7 +86,7 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
           </div>
         </div>
 
-        <div className="grid gap-4 mt-4">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Card className="p-6 border-border cursor-pointer active:scale-[0.98] transition" onClick={() => setView("trips")}>
             <Truck className="h-12 w-12 text-primary mb-4" />
             <h2 className="text-2xl font-bold mb-2">Viajes en planta</h2>
@@ -104,8 +104,8 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
   }
 
   return (
-    <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" size="lg" onClick={() => setView("menu")}>
           <ArrowLeft className="mr-2 h-5 w-5" />
           Manual
@@ -138,11 +138,11 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
         ) : (
           <div className="flex flex-col gap-3 pb-4">
             {filteredTrips.map((trip) => (
-              <Card key={trip.folio} className="p-4 cursor-pointer hover:bg-secondary/50 transition-colors border-border active:scale-[0.98]" onClick={() => onSelectTrip(trip)}>
+              <Card key={trip.folio} className="cursor-pointer border-border p-4 transition-colors hover:bg-secondary/50 active:scale-[0.98]" onClick={() => onSelectTrip(trip)}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-bold text-lg">{trip.folio}</span>
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                      <span className="break-words text-lg font-bold">{trip.folio}</span>
                       <Badge className={`text-xs ${STATUS_COLORS[trip.estado]}`}>{STATUS_LABELS[trip.estado]}</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground truncate">{trip.orden} • {trip.chofer}</p>

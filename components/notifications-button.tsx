@@ -127,7 +127,7 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
   }
 
   return (
-    <div className="absolute right-4 top-4 z-50">
+    <div className="fixed right-4 top-[max(4.5rem,env(safe-area-inset-top))] z-50">
       <Button
         type="button"
         size="icon"
@@ -145,7 +145,7 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
       </Button>
 
       {open && (
-        <Card className="absolute right-0 mt-3 w-80 border-border bg-card/95 p-3 shadow-2xl backdrop-blur-md">
+        <Card className="absolute right-0 mt-3 w-[calc(100vw-2rem)] max-w-80 border-border bg-card/95 p-3 shadow-2xl backdrop-blur-md">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold">Notificaciones</p>
