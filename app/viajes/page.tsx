@@ -1,6 +1,6 @@
 "use client";
 
-// Comentario para personas no técnicas: Muestra la lista de viajes para consulta rápida y seguimiento operativo.
+// Muestra la lista de viajes para consulta rápida y seguimiento operativo.
 
 import { useEffect, useState } from 'react';
 import { getAllTrips, updateTripStatus } from '../../lib/api';

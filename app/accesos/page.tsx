@@ -1,6 +1,6 @@
 "use client";
 
-// Comentario para personas no técnicas: Pantalla para registrar entradas y salidas manuales de personas o vehículos no ligados a un viaje.
+// Pantalla para registrar entradas y salidas manuales de personas o vehículos no ligados a un viaje.
 
 import { useEffect, useState } from 'react';
 import { getAccessRecords, createAccessRecord, registerAccessExit, getFleetVehicles } from '../../lib/api';

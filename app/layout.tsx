@@ -1,4 +1,4 @@
-// Comentario para personas no técnicas: Plantilla general que envuelve todas las páginas con estilos, tema y configuración básica.
+// Plantilla general que envuelve todas las páginas con estilos, tema y configuración básica.
 
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";

@@ -1,27 +1,30 @@
 "use client";
 
-// Comentario para personas no técnicas: Interfaz de apoyo para registrar accesos y salidas de visitantes o unidades internas.
+// Interfaz de apoyo para registrar accesos y salidas de visitantes o unidades internas.
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Car, Clock, LogOut, Plus, Search, User } from "lucide-react";
+import { AlertCircle, ArrowLeft, Car, Clock, LogOut, Plus, RefreshCw, Search, User } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { ACCESS_STATUS_COLORS, ACCESS_STATUS_LABELS, AccessRecord, FleetVehicle, VehicleType } from "@/lib/types";
+import { ACCESS_STATUS_COLORS, ACCESS_STATUS_LABELS, AccessRecord, EmployeeSession, FleetVehicle, VehicleType } from "@/lib/types";
 import { createAccessRecord, getAccessRecords, getFleetVehicles, registerAccessExit } from "@/lib/api";
 
 interface AccessControlProps {
   onBack: () => void;
+  employee: EmployeeSession;
 }
 
 // Control completo de accesos manuales usado cuando se necesita una vista dedicada.
-export function AccessControl({ onBack }: AccessControlProps) {
+export function AccessControl({ onBack, employee }: AccessControlProps) {
   const [records, setRecords] = useState<AccessRecord[]>([]);
   const [fleetVehicles, setFleetVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fleetLoading, setFleetLoading] = useState(false);
+  const [fleetError, setFleetError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
   const [nombre, setNombre] = useState("");
@@ -32,22 +35,41 @@ export function AccessControl({ onBack }: AccessControlProps) {
 
   useEffect(() => {
     loadRecords();
+    loadFleetVehicles();
   }, []);
 
   const loadRecords = async () => {
     setLoading(true);
     try {
-      const [recordsData, vehiclesData] = await Promise.all([
-        getAccessRecords(),
-        getFleetVehicles().catch(() => [] as FleetVehicle[]),
-      ]);
-      setRecords(recordsData);
-      setFleetVehicles(vehiclesData);
-      if (!vehiculoPurp && vehiclesData.length > 0) {
-        setVehiculoPurp(String(vehiclesData[0].id));
-      }
+      setRecords(await getAccessRecords());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron cargar los registros de acceso";
+      toast.error(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadFleetVehicles = async () => {
+    setFleetLoading(true);
+    setFleetError(null);
+    try {
+      const vehiclesData = await getFleetVehicles();
+      setFleetVehicles(vehiclesData);
+      if (vehiclesData.length > 0) {
+        setVehiculoPurp((current) => current || String(vehiclesData[0].id));
+      } else {
+        setVehiculoPurp("");
+        setFleetError("No hay vehículos activos disponibles en Flotilla.");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron cargar vehículos de Flotilla";
+      setFleetVehicles([]);
+      setVehiculoPurp("");
+      setFleetError(message);
+      toast.error(message);
+    } finally {
+      setFleetLoading(false);
     }
   };
 
@@ -100,6 +122,7 @@ export function AccessControl({ onBack }: AccessControlProps) {
         vehiculo,
         vehiculo_purp: vehiculoPurp,
         descripcion_vehiculo: descripcionVehiculo.trim(),
+        employeeId: employee.id,
       });
       setRecords((prev) => [record, ...prev]);
       setNombre("");
@@ -113,7 +136,7 @@ export function AccessControl({ onBack }: AccessControlProps) {
 
   // Marca la salida de un registro y actualiza la lista en pantalla.
   const handleExit = async (id: string) => {
-    const updated = await registerAccessExit(id);
+    const updated = await registerAccessExit(id, employee.id);
     if (!updated) return;
     setRecords((prev) => prev.map((r) => (r.id === id ? updated : r)));
     toast.success("Salida registrada");
@@ -144,19 +167,44 @@ export function AccessControl({ onBack }: AccessControlProps) {
               <option>Otro vehículo</option>
             </select>
             {vehiculo === "Vehículo PURP" ? (
-              <select className="h-12 w-full rounded-md bg-secondary px-3 text-base border border-border" value={vehiculoPurp} onChange={(e) => setVehiculoPurp(e.target.value)}>
-                {fleetVehicles.length === 0 ? (
-                  <option value="">No hay vehículos disponibles</option>
-                ) : (
-                  fleetVehicles.map((v) => <option key={v.id} value={String(v.id)}>{v.name}</option>)
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <select
+                    className="h-12 w-full rounded-md bg-secondary px-3 text-base border border-border disabled:opacity-60"
+                    value={vehiculoPurp}
+                    onChange={(e) => setVehiculoPurp(e.target.value)}
+                    disabled={fleetLoading || fleetVehicles.length === 0}
+                  >
+                    {fleetLoading ? (
+                      <option value="">Cargando vehículos...</option>
+                    ) : fleetVehicles.length === 0 ? (
+                      <option value="">No hay vehículos disponibles</option>
+                    ) : (
+                      fleetVehicles.map((v) => (
+                        <option key={v.id} value={String(v.id)}>
+                          {v.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <Button type="button" variant="secondary" size="icon" className="h-12 w-12 shrink-0" onClick={loadFleetVehicles} disabled={fleetLoading}>
+                    {fleetLoading ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+                  </Button>
+                </div>
+
+                {fleetError && (
+                  <div className="flex gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{fleetError}</span>
+                  </div>
                 )}
-              </select>
+              </div>
             ) : (
               <Input placeholder="Describe el vehículo..." className="h-12 text-base" value={descripcionVehiculo} onChange={(e) => setDescripcionVehiculo(e.target.value)} />
             )}
             <div className="grid grid-cols-2 gap-3">
               <Button variant="secondary" size="lg" onClick={() => setCreating(false)}>Cancelar</Button>
-              <Button size="lg" onClick={handleCreate} disabled={saving}>{saving ? <Spinner className="mr-2" /> : null}Registrar</Button>
+              <Button size="lg" onClick={handleCreate} disabled={saving || (vehiculo === "Vehículo PURP" && (fleetLoading || fleetVehicles.length === 0))}>{saving ? <Spinner className="mr-2" /> : null}Registrar</Button>
             </div>
           </CardContent>
         </Card>
@@ -184,7 +232,7 @@ export function AccessControl({ onBack }: AccessControlProps) {
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Car className="h-4 w-4" />
-                      <span>{record.vehiculo === "Vehículo PURP" ? record.vehiculo_purp : record.descripcion_vehiculo}</span>
+                      <span>{record.vehiculo === "Vehículo PURP" ? (vehicleNameById.get(String(record.vehiculo_purp)) || record.vehiculo_purp) : record.descripcion_vehiculo}</span>
                     </div>
                   </div>
                   <Badge className={ACCESS_STATUS_COLORS[record.estado]}>{ACCESS_STATUS_LABELS[record.estado]}</Badge>
@@ -193,6 +241,8 @@ export function AccessControl({ onBack }: AccessControlProps) {
                 <div className="grid gap-1 text-sm text-muted-foreground mb-3">
                   <span><Clock className="inline h-4 w-4 mr-1" /> Entrada: {formatDate(record.fecha_entrada)}</span>
                   <span><Clock className="inline h-4 w-4 mr-1" /> Salida: {formatDate(record.fecha_salida)}</span>
+                  {record.operador_entrada && <span>Operador entrada: {record.operador_entrada}</span>}
+                  {record.operador_salida && <span>Operador salida: {record.operador_salida}</span>}
                 </div>
 
                 {record.estado === "en_planta" && (

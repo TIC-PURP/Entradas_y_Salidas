@@ -1,6 +1,6 @@
 "use client";
 
-// Comentario para personas no técnicas: Muestra la cámara para leer códigos QR o de barras y avisar cuando se detecta un viaje.
+// Muestra la cámara para leer códigos QR o de barras y avisar cuando se detecta un viaje.
 
 import { useState } from "react";
 import { Scanner as QRScanner, IDetectedBarcode } from "@yudiel/react-qr-scanner";

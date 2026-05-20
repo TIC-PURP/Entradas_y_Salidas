@@ -1,6 +1,6 @@
 "use client";
 
-// Comentario para personas no técnicas: Permite buscar y elegir viajes sin cámara cuando el escaneo no está disponible.
+// Permite buscar y elegir viajes sin cámara cuando el escaneo no está disponible.
 
 import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { Trip, TripStatus, STATUS_LABELS, STATUS_COLORS } from "@/lib/types";
+import { EmployeeSession, Trip, TripStatus, STATUS_LABELS, STATUS_COLORS } from "@/lib/types";
 import { getAllTrips } from "@/lib/api";
 import { Search, ArrowLeft, Truck, Filter, ScanLine, UserCheck } from "lucide-react";
 import { AccessControl } from "@/components/access-control";
@@ -16,6 +16,7 @@ import { AccessControl } from "@/components/access-control";
 interface ManualModeProps {
   onSelectTrip: (trip: Trip) => void;
   onBack: () => void;
+  employee: EmployeeSession;
 }
 
 type ManualView = "menu" | "trips" | "access";
@@ -30,7 +31,7 @@ const STATUS_FILTERS: { value: TripStatus | "all"; label: string }[] = [
 ];
 
 // Pantalla de respaldo para encontrar viajes escribiendo folio, orden, chofer o placas.
-export function ManualMode({ onSelectTrip, onBack }: ManualModeProps) {
+export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) {
   const [view, setView] = useState<ManualView>("menu");
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +69,7 @@ export function ManualMode({ onSelectTrip, onBack }: ManualModeProps) {
   }, [trips, search, statusFilter]);
 
   if (view === "access") {
-    return <AccessControl onBack={() => setView("menu")} />;
+    return <AccessControl onBack={() => setView("menu")} employee={employee} />;
   }
 
   if (view === "menu") {

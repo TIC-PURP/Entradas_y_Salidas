@@ -1,6 +1,6 @@
 "use client";
 
-// Comentario para personas no técnicas: Lista de avisos operativos que logística envía a caseta para su revisión.
+// Lista de avisos operativos que logística envía a caseta para su revisión.
 
 import { useEffect, useRef, useState } from "react";
 import { Bell, CheckCircle2, ExternalLink, X } from "lucide-react";

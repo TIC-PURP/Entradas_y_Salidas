@@ -1,6 +1,6 @@
 'use client';
 
-// Comentario para personas no técnicas: Registra funciones de aplicación instalable para que la app trabaje como PWA.
+// Registra funciones de aplicación instalable para que la app trabaje como PWA.
 
 import { useEffect } from 'react';
 

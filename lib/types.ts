@@ -1,4 +1,4 @@
-// Comentario para personas no técnicas: Define los nombres y estructuras de datos que usa la app para viajes, accesos, notificaciones y vehículos.
+// Define los nombres y estructuras de datos que usa la app para viajes, accesos, notificaciones y vehículos.
 
 // Estados posibles de un viaje, desde que se planea hasta que termina.
 export type TripStatus =
@@ -10,6 +10,16 @@ export type TripStatus =
   | "finalizado";
 
 // Información mínima que la caseta necesita ver de cada viaje.
+export interface EmployeeSession {
+  id: number;
+  name: string;
+  barcode?: string;
+  pin?: string;
+  job_title?: string;
+  department?: string;
+  work_location?: string;
+}
+
 export interface Trip {
   id?: number;
   folio: string;
@@ -21,6 +31,8 @@ export interface Trip {
   estado: TripStatus;
   fecha_entrada?: string;
   fecha_salida?: string;
+  operador_entrada?: string;
+  operador_salida?: string;
 }
 
 // Estados de un acceso manual: entró, sigue dentro o ya salió.
@@ -37,6 +49,8 @@ export interface AccessRecord {
   estado: AccessStatus;
   fecha_entrada?: string;
   fecha_salida?: string;
+  operador_entrada?: string;
+  operador_salida?: string;
 }
 
 // Textos amigables que se muestran al usuario en lugar de claves técnicas.
@@ -88,4 +102,6 @@ export interface FleetVehicle {
   id: number;
   name: string;
   license_plate?: string;
+  driver?: string;
+  state?: string;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-// Comentario para personas no técnicas: Versión de tarjeta de viaje usada para mostrar datos y acciones principales al usuario.
+// Versión de tarjeta de viaje usada para mostrar datos y acciones principales al usuario.
 
 import { useState } from 'react';
 

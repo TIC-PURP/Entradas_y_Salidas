@@ -1,16 +1,19 @@
 "use client";
 
-// Comentario para personas no técnicas: Pantalla principal de caseta: escanea códigos, busca viajes y muestra el resultado al guardia.
+// Pantalla principal de caseta: escanea códigos, busca viajes y muestra el resultado al guardia.
 
 import { useState, useCallback } from "react";
 import { Scanner } from "@/components/scanner";
 import { TripCard } from "@/components/trip-card";
 import { ManualMode } from "@/components/manual-mode";
-import { Trip } from "@/lib/types";
+import { EmployeeSession, Trip } from "@/lib/types";
 import { getTripByCode } from "@/lib/api";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { NotificationsButton } from "@/components/notifications-button";
+import { clearStoredEmployee, EmployeeLogin } from "@/components/employee-login";
+import { Button } from "@/components/ui/button";
+import { LogOut, UserCheck } from "lucide-react";
 
 // Vistas posibles de la pantalla principal: cámara, detalle del viaje o búsqueda manual.
 type AppView = "scanner" | "trip" | "manual";
@@ -22,6 +25,8 @@ export default function Home() {
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   // Evita dobles búsquedas mientras el sistema consulta la información.
   const [isLoading, setIsLoading] = useState(false);
+  // Empleado operativo autenticado en la PWA. No es usuario de Odoo; es hr.employee.
+  const [employee, setEmployee] = useState<EmployeeSession | null>(null);
 
   // Cuando la cámara o el modo manual entregan un código, se busca el viaje correspondiente.
   const handleScan = useCallback(async (code: string) => {
@@ -75,8 +80,42 @@ export default function Home() {
     setView("scanner");
   }, []);
 
+  const handleLogout = useCallback(() => {
+    clearStoredEmployee();
+    setEmployee(null);
+    setSelectedTrip(null);
+    setView("scanner");
+    toast.info("Sesión de operador cerrada");
+  }, []);
+
+  if (!employee) {
+    return (
+      <>
+        <EmployeeLogin onLogin={setEmployee} />
+        <Toaster position="top-center" richColors />
+      </>
+    );
+  }
+
   return (
     <main className="min-h-screen flex flex-col bg-background">
+      <div className="sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
+        <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <UserCheck className="h-4 w-4 text-primary" />
+              <span className="truncate">{employee.name}</span>
+            </div>
+            <p className="truncate text-xs text-muted-foreground">
+              {employee.job_title || employee.department || "Operador PWA"}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={handleLogout}>
+            <LogOut className="mr-1 h-4 w-4" />
+            Salir
+          </Button>
+        </div>
+      </div>
       {/* Botón de avisos: si logística manda una alerta, el guardia puede abrir el viaje relacionado. */}
       <NotificationsButton onOpenTrip={(trip) => { setSelectedTrip(trip); setView("trip"); }} />
       <div className="flex-1 flex flex-col max-w-lg mx-auto w-full p-4">
@@ -95,6 +134,7 @@ export default function Home() {
             trip={selectedTrip}
             onUpdate={handleTripUpdate}
             onBack={handleBack}
+            employee={employee}
           />
         )}
 
@@ -103,6 +143,7 @@ export default function Home() {
           <ManualMode
             onSelectTrip={handleSelectTrip}
             onBack={handleBackToScanner}
+            employee={employee}
           />
         )}
       </div>

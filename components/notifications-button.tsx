@@ -1,6 +1,6 @@
 "use client"
 
-// Comentario para personas no técnicas: Botón que revisa avisos para guardia y permite abrir el viaje relacionado.
+// Botón que revisa avisos para guardia y permite abrir el viaje relacionado.
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Bell, Check, ExternalLink } from "lucide-react"
@@ -154,11 +154,12 @@ export function NotificationsButton({ onOpenTrip }: NotificationsButtonProps) {
             <Badge variant="secondary">{pending.length}</Badge>
           </div>
 
-          {pending.length > 0 && (
+          {/* Btn Maracar todas las notificaciones como leidas */}
+          {/* {pending.length > 0 && (
             <Button type="button" variant="ghost" size="sm" className="mb-3 w-full" onClick={handleAcknowledgeAll}>
               Marcar todas como leídas
             </Button>
-          )}
+          )} */}
 
           {pending.length === 0 ? (
             <div className="rounded-lg bg-secondary/50 p-4 text-center text-sm text-muted-foreground">

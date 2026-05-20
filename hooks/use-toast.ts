@@ -1,6 +1,6 @@
 'use client'
 
-// Comentario para personas no técnicas: Hook reutilizable de React; comparte comportamiento común entre pantallas y componentes.
+// Hook reutilizable de React; comparte comportamiento común entre pantallas y componentes.
 
 // Inspired by react-hot-toast library
 import * as React from 'react'

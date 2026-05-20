@@ -1,6 +1,6 @@
 "use client";
 
-// Comentario para personas no técnicas: Presenta la información de un viaje y los botones para cambiar su estado de entrada o salida.
+// Presenta la información de un viaje y los botones para cambiar su estado de entrada o salida.
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  EmployeeSession,
   Trip,
   TripStatus,
   STATUS_LABELS,
@@ -35,10 +36,11 @@ interface TripCardProps {
   trip: Trip;
   onUpdate: (trip: Trip) => void;
   onBack: () => void;
+  employee: EmployeeSession;
 }
 
 // Tarjeta que resume un viaje y ofrece las acciones que caseta puede realizar.
-export function TripCard({ trip, onUpdate, onBack }: TripCardProps) {
+export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
   // Ejecuta una acción del viaje, como validar entrada, pedir revisión o registrar salida.
@@ -76,7 +78,7 @@ export function TripCard({ trip, onUpdate, onBack }: TripCardProps) {
               size="lg"
               className="h-16 text-lg font-semibold bg-success hover:bg-success/90 text-success-foreground"
               onClick={() =>
-                handleAction(() => validateEntry(trip.folio), "validate")
+                handleAction(() => validateEntry(trip.folio, employee.id), "validate")
               }
               disabled={loading !== null}
             >
@@ -92,7 +94,7 @@ export function TripCard({ trip, onUpdate, onBack }: TripCardProps) {
               variant="destructive"
               className="h-16 text-lg font-semibold"
               onClick={() =>
-                handleAction(() => markInvalid(trip.folio), "invalid")
+                handleAction(() => markInvalid(trip.folio, employee.id), "invalid")
               }
               disabled={loading !== null}
             >
@@ -141,7 +143,7 @@ export function TripCard({ trip, onUpdate, onBack }: TripCardProps) {
             size="lg"
             className="h-16 text-lg font-semibold w-full bg-primary hover:bg-primary/90 text-primary-foreground"
             onClick={() =>
-              handleAction(() => registerExit(trip.folio), "exit")
+              handleAction(() => registerExit(trip.folio, employee.id), "exit")
             }
             disabled={loading !== null}
           >
@@ -245,6 +247,25 @@ export function TripCard({ trip, onUpdate, onBack }: TripCardProps) {
                     <span className="font-medium">
                       {formatDate(trip.fecha_salida)}
                     </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(trip.operador_entrada || trip.operador_salida) && (
+            <div className="pt-4 border-t border-border">
+              <div className="grid gap-3 text-sm">
+                {trip.operador_entrada && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Operador entrada:</span>
+                    <span className="font-medium text-right">{trip.operador_entrada}</span>
+                  </div>
+                )}
+                {trip.operador_salida && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Operador salida:</span>
+                    <span className="font-medium text-right">{trip.operador_salida}</span>
                   </div>
                 )}
               </div>

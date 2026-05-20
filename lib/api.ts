@@ -1,6 +1,6 @@
-// Comentario para personas no técnicas: Centraliza las acciones de la app; decide si usar datos de prueba o pedir información real al servidor.
+// Centraliza las acciones de la app; decide si usar datos de prueba o pedir información real al servidor.
 
-import type { AccessRecord, FleetVehicle, GuardNotification, Trip, TripStatus, VehicleType } from "./types"
+import type { AccessRecord, EmployeeSession, FleetVehicle, GuardNotification, Trip, TripStatus, VehicleType } from "./types"
 
 // Datos de ejemplo para que la aplicación pueda probarse sin conectarse a Odoo.
 const mockTrips: Trip[] = [
@@ -11,7 +11,7 @@ const mockTrips: Trip[] = [
 ]
 
 const mockAccessRecords: AccessRecord[] = [
-  { id: "A-001", nombre: "Mario Pérez", vehiculo: "Vehículo PURP", vehiculo_purp: "PICKUP 04", estado: "en_planta", fecha_entrada: "2026-04-29T09:00:00" },
+  { id: "A-001", nombre: "Mario Acosta", vehiculo: "Vehículo PURP", vehiculo_purp: "PICKUP 04", estado: "en_planta", fecha_entrada: "2026-04-29T09:00:00" },
 ]
 
 // Copias modificables: simulan cambios reales mientras se usa el modo de prueba.
@@ -28,6 +28,16 @@ let notifications: GuardNotification[] = [
   { id: "N-001", folio: "VJ-2024-002", message: "Logística corrigió datos del camión. Revalidar en caseta." },
 ]
 
+const mockEmployee: EmployeeSession = {
+  id: 1,
+  name: "Luis Gilberto Sandoval Valdez",
+  barcode: "041920282163",
+  pin: "23108300098",
+  job_title: "Operador general",
+  department: "Operaciones / Seguridad e higiene",
+  work_location: "Pinitos",
+}
+
 // Si esta variable está activa, se usan datos de prueba; si no, se consulta Odoo.
 const useMock = () => process.env.NEXT_PUBLIC_USE_MOCK === "true"
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -40,10 +50,20 @@ async function odoo<T>(action: string, payload: Record<string, unknown> = {}): P
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, ...payload }),
   })
-  if (!res.ok) throw new Error(await res.text())
   const json = await res.json()
+  if (!res.ok) throw new Error(json.error || "Error Odoo")
   if (!json.ok) throw new Error(json.error || "Error Odoo")
   return json.data as T
+}
+
+
+// Valida el acceso operativo del empleado usando RFID/código de credencial o NIP de hr.employee.
+export async function employeeLogin(code: string): Promise<EmployeeSession> {
+  if (!useMock()) return odoo<EmployeeSession>("employeeLogin", { code })
+  await delay(150)
+  const clean = code.trim()
+  if (clean === mockEmployee.barcode || clean === mockEmployee.pin) return mockEmployee
+  throw new Error("No se encontró un empleado activo con ese código")
 }
 
 // Busca un viaje por folio, orden o placas, que son los datos que puede traer un código escaneado.
@@ -68,7 +88,7 @@ export async function getAllTrips(): Promise<Trip[]> {
 }
 
 // Cambia el estado de un viaje y agrega fechas cuando se registra entrada, revisión o salida.
-export async function updateTripStatus(folio: string, newStatus: TripStatus, additionalData?: Partial<Trip>): Promise<Trip | null> {
+export async function updateTripStatus(folio: string, newStatus: TripStatus, additionalData?: Partial<Trip> & { employeeId?: number }): Promise<Trip | null> {
   if (!useMock()) return odoo<Trip | null>("updateTripStatus", { folio, newStatus, additionalData })
   await delay(200)
   const index = trips.findIndex((t) => t.folio === folio)
@@ -78,13 +98,13 @@ export async function updateTripStatus(folio: string, newStatus: TripStatus, add
 }
 
 // Marca que el camión entró correctamente y queda esperando siguiente paso operativo.
-export async function validateEntry(folio: string): Promise<Trip | null> {
-  return updateTripStatus(folio, "en_espera", { fecha_entrada: nowIso() })
+export async function validateEntry(folio: string, employeeId?: number): Promise<Trip | null> {
+  return updateTripStatus(folio, "en_espera", { fecha_entrada: nowIso(), employeeId })
 }
 
 // Marca un viaje para revisión cuando la caseta detecta datos incorrectos o incompletos.
-export async function markInvalid(folio: string): Promise<Trip | null> {
-  return updateTripStatus(folio, "en_revision", { fecha_entrada: nowIso() })
+export async function markInvalid(folio: string, employeeId?: number): Promise<Trip | null> {
+  return updateTripStatus(folio, "en_revision", { fecha_entrada: nowIso(), employeeId })
 }
 
 // Regresa el viaje a espera cuando logística corrigió la información pendiente.
@@ -93,8 +113,8 @@ export async function validateCorrection(folio: string): Promise<Trip | null> {
 }
 
 // Registra la salida del camión y cierra el viaje en la vista de caseta.
-export async function registerExit(folio: string): Promise<Trip | null> {
-  return updateTripStatus(folio, "finalizado", { fecha_salida: nowIso() })
+export async function registerExit(folio: string, employeeId?: number): Promise<Trip | null> {
+  return updateTripStatus(folio, "finalizado", { fecha_salida: nowIso(), employeeId })
 }
 
 // Obtiene las unidades internas disponibles para registrar accesos de vehículos PURP.
@@ -117,6 +137,7 @@ export async function createAccessRecord(data: {
   vehiculo: VehicleType
   vehiculo_purp?: string
   descripcion_vehiculo?: string
+  employeeId?: number
 }): Promise<AccessRecord> {
   if (!useMock()) return odoo<AccessRecord>("createAccessRecord", { data })
   await delay(200)
@@ -134,8 +155,8 @@ export async function createAccessRecord(data: {
 }
 
 // Coloca la hora de salida a un acceso manual para saber que ya abandonó la planta.
-export async function registerAccessExit(id: string): Promise<AccessRecord | null> {
-  if (!useMock()) return odoo<AccessRecord | null>("registerAccessExit", { id })
+export async function registerAccessExit(id: string, employeeId?: number): Promise<AccessRecord | null> {
+  if (!useMock()) return odoo<AccessRecord | null>("registerAccessExit", { id, employeeId })
   await delay(200)
   const index = accessRecords.findIndex((r) => r.id === id)
   if (index === -1) return null
