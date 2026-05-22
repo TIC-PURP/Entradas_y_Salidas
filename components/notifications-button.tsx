@@ -9,11 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { getGuardNotifications, acknowledgeGuardNotification, getTripByCode } from "@/lib/api"
-import type { EmployeeSession, GuardNotification, Trip } from "@/lib/types"
+import type { GuardNotification, Trip } from "@/lib/types"
 
 interface NotificationsButtonProps {
   onOpenTrip: (trip: Trip) => void
-  employee: EmployeeSession
+  context?: any
 }
 
 function showBrowserNotification(item: GuardNotification) {
@@ -32,7 +32,7 @@ function showBrowserNotification(item: GuardNotification) {
 }
 
 // Boton flotante que concentra los avisos pendientes para el guardia.
-export function NotificationsButton({ onOpenTrip, employee }: NotificationsButtonProps) {
+export function NotificationsButton({ onOpenTrip, context }: NotificationsButtonProps) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<GuardNotification[]>([])
   const seenThisSessionRef = useRef<Set<string>>(new Set())
@@ -52,7 +52,7 @@ export function NotificationsButton({ onOpenTrip, employee }: NotificationsButto
 
   const load = async () => {
     try {
-      const unread = await getGuardNotifications(employee)
+      const unread = await getGuardNotifications(context)
       setItems(unread)
 
       for (const item of unread) {
@@ -82,12 +82,12 @@ export function NotificationsButton({ onOpenTrip, employee }: NotificationsButto
       window.clearInterval(interval)
       window.removeEventListener("focus", onFocus)
     }
-  }, [employee.id, employee.work_location])
+  }, [JSON.stringify(context)])
 
   // Abrir tambien resuelve el aviso global, para que no siga en otros equipos.
   const handleOpen = async (notification: GuardNotification) => {
     await acknowledgeGuardNotification(notification.id)
-    const trip = await getTripByCode(notification.folio, employee)
+    const trip = await getTripByCode(notification.folio, context)
     if (trip) {
       setOpen(false)
       onOpenTrip(trip)
@@ -132,7 +132,7 @@ export function NotificationsButton({ onOpenTrip, employee }: NotificationsButto
             <div>
               <p className="text-sm font-semibold">Notificaciones</p>
               <p className="text-xs text-muted-foreground">
-                {employee.work_location ? `Almacen ${employee.work_location}` : "Comentarios nuevos del chatter"}
+                {context?.activePlant ? `Almacen ${context.activePlant}` : "Comentarios nuevos del chatter"}
               </p>
             </div>
             <Badge variant="secondary">{pending.length}</Badge>

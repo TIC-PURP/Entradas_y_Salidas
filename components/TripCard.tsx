@@ -71,7 +71,7 @@ export default function TripCard({ viaje, onAction }: Props) {
             Validar corrección
           </button>
         );
-      case 'en_proceso':
+      case 'administrativo':
         return (
           <button
             onClick={async () => {

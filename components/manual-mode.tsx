@@ -8,15 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { EmployeeSession, Trip, TripStatus, STATUS_LABELS, STATUS_COLORS } from "@/lib/types";
-import { getAllTrips } from "@/lib/api";
+import { AppSession, EmployeeSession, Trip, TripStatus, STATUS_LABELS, STATUS_COLORS } from "@/lib/types";
+import { buildOdooContext, getAllTrips } from "@/lib/api";
 import { Search, ArrowLeft, Truck, Filter, ScanLine, UserCheck, Building2 } from "lucide-react";
 import { AccessControl } from "@/components/access-control";
 
 interface ManualModeProps {
   onSelectTrip: (trip: Trip) => void;
   onBack: () => void;
-  employee: EmployeeSession;
+  session: AppSession;
+  employee?: EmployeeSession;
 }
 
 type ManualView = "menu" | "trips" | "access";
@@ -26,12 +27,14 @@ const STATUS_FILTERS: { value: TripStatus | "all"; label: string }[] = [
   { value: "en_camino", label: "En Camino" },
   { value: "en_revision", label: "En Revisión" },
   { value: "en_espera", label: "En Espera" },
-  { value: "en_proceso", label: "En Proceso" },
+  { value: "bascula", label: "Báscula" },
+  { value: "embarque", label: "Embarque" },
+  { value: "administrativo", label: "Administrativo" },
   { value: "finalizado", label: "Finalizado" },
 ];
 
 // Pantalla de respaldo para encontrar viajes escribiendo folio, orden, chofer o placas.
-export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) {
+export function ManualMode({ onSelectTrip, onBack, session, employee }: ManualModeProps) {
   const [view, setView] = useState<ManualView>("menu");
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,13 +47,13 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
     const loadTrips = async () => {
       setLoading(true);
       try {
-        setTrips(await getAllTrips(employee));
+        setTrips(await getAllTrips(buildOdooContext(session)));
       } finally {
         setLoading(false);
       }
     };
     loadTrips();
-  }, [view, employee]);
+  }, [view, session]);
 
   // Filtra la lista según el texto buscado y el estado elegido por el guardia.
   const filteredTrips = useMemo(() => {
@@ -69,7 +72,8 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
   }, [trips, search, statusFilter]);
 
   if (view === "access") {
-    return <AccessControl onBack={() => setView("menu")} employee={employee} />;
+    if (!employee) return <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-destructive">No hay empleado operativo para accesos.</div>;
+    return <AccessControl onBack={() => setView("menu")} employee={employee} context={buildOdooContext(session)} activePlant={session.activePlant || session.permissions.planta_predeterminada || ""} />;
   }
 
   if (view === "menu") {
@@ -87,17 +91,21 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Card className="p-6 border-border cursor-pointer active:scale-[0.98] transition" onClick={() => setView("trips")}>
-            <Truck className="h-12 w-12 text-primary mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Viajes en planta</h2>
-            <p className="text-muted-foreground">Buscar viajes por folio, chofer, placas o etapa.</p>
-          </Card>
+          {session.permissions.puede_logistica && (
+            <Card className="p-6 border-border cursor-pointer active:scale-[0.98] transition" onClick={() => setView("trips")}>
+              <Truck className="h-12 w-12 text-primary mb-4" />
+              <h2 className="text-2xl font-bold mb-2">Viajes en planta</h2>
+              <p className="text-muted-foreground">Buscar viajes por folio, chofer, placas o etapa.</p>
+            </Card>
+          )}
 
-          <Card className="p-6 border-border cursor-pointer active:scale-[0.98] transition" onClick={() => setView("access")}>
-            <UserCheck className="h-12 w-12 text-primary mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Entradas y Salidas</h2>
-            <p className="text-muted-foreground">Registrar entradas y salidas manuales de personas y vehículos.</p>
-          </Card>
+          {session.permissions.puede_entrada_salida && (
+            <Card className="p-6 border-border cursor-pointer active:scale-[0.98] transition" onClick={() => setView("access")}>
+              <UserCheck className="h-12 w-12 text-primary mb-4" />
+              <h2 className="text-2xl font-bold mb-2">Entradas y Salidas</h2>
+              <p className="text-muted-foreground">Registrar entradas y salidas manuales de personas y vehículos.</p>
+            </Card>
+          )}
         </div>
       </div>
     );
@@ -141,15 +149,15 @@ export function ManualMode({ onSelectTrip, onBack, employee }: ManualModeProps) 
               <Card key={trip.folio} className="cursor-pointer border-border p-4 transition-colors hover:bg-secondary/50 active:scale-[0.98]" onClick={() => onSelectTrip(trip)}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
                       <span className="break-words text-lg font-bold">{trip.folio}</span>
+                      <Badge className={`text-xs ${STATUS_COLORS[trip.estado]}`}>{STATUS_LABELS[trip.estado]}</Badge>
                       {trip.almacen && (
-                        <Badge variant="secondary" className="text-xs">
-                          <Building2 className="mr-1 h-3 w-3" />
+                        <Badge variant="outline" className="gap-1 border-primary/40 bg-primary/10 text-xs text-primary">
+                          <Building2 className="h-3 w-3" />
                           {trip.almacen}
                         </Badge>
                       )}
-                      <Badge className={`text-xs ${STATUS_COLORS[trip.estado]}`}>{STATUS_LABELS[trip.estado]}</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground truncate">{trip.orden} • {trip.chofer}</p>
                     <p className="text-sm text-muted-foreground truncate">{trip.placas} • {trip.linea_fletera}</p>

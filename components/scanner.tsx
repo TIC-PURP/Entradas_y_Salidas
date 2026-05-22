@@ -13,10 +13,11 @@ interface ScannerProps {
   onScan: (code: string) => void;
   onManualMode: () => void;
   isLoading: boolean;
+  showManualMode?: boolean;
 }
 
 // Componente que guía al guardia para usar la cámara y leer un código.
-export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
+export function Scanner({ onScan, onManualMode, isLoading, showManualMode = true }: ScannerProps) {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const scanLockedRef = useRef(false);
 
@@ -124,15 +125,17 @@ export function Scanner({ onScan, onManualMode, isLoading }: ScannerProps) {
           <span className="text-sm">Apunta al código QR o de barras</span>
         </div>
 
-        <Button
-          variant="secondary"
-          size="lg"
-          className="h-14 text-base sm:text-lg"
-          onClick={onManualMode}
-        >
-          <List className="mr-2 h-5 w-5" />
-          Modo Manual
-        </Button>
+        {showManualMode && (
+          <Button
+            variant="secondary"
+            size="lg"
+            className="h-14 text-base sm:text-lg"
+            onClick={onManualMode}
+          >
+            <List className="mr-2 h-5 w-5" />
+            Modo Manual
+          </Button>
+        )}
       </div>
     </div>
   );

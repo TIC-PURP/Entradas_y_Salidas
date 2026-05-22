@@ -6,7 +6,9 @@ export type TripStatus =
   | "en_camino"
   | "en_revision"
   | "en_espera"
-  | "en_proceso"
+  | "bascula"
+  | "embarque"
+  | "administrativo"
   | "finalizado";
 
 // Información mínima que la caseta necesita ver de cada viaje.
@@ -19,7 +21,41 @@ export interface EmployeeSession {
   department?: string;
   work_location?: string;
   work_location_id?: number;
-  can_view_all_locations?: boolean;
+}
+
+export interface OdooUserSession {
+  uid: number;
+  name: string;
+  login: string;
+}
+
+export type PwaRole = "guardia" | "usuario" | "supervisor" | "admin" | string;
+
+export interface PwaPermissions {
+  id: number;
+  name: string;
+  role: PwaRole;
+  requiere_gafete: boolean;
+  puede_abrir_odoo: boolean;
+  puede_entrada_salida: boolean;
+  puede_logistica: boolean;
+  ve_todos_los_almacenes: boolean;
+  planta_predeterminada?: string;
+  empleado?: EmployeeSession | null;
+}
+
+export interface AppSession {
+  odooUser: OdooUserSession;
+  permissions: PwaPermissions;
+  employee?: EmployeeSession | null;
+  activePlant?: string;
+  theme?: "dark" | "light";
+  sessionVersion?: string;
+}
+
+export interface OdooLoginResult {
+  user: OdooUserSession;
+  permissions: PwaPermissions;
 }
 
 export interface Trip {
@@ -37,6 +73,7 @@ export interface Trip {
   operador_entrada?: string;
   operador_salida?: string;
   planta?: string;
+  odoo_url?: string;
 }
 
 // Estados de un acceso manual: entró, sigue dentro o ya salió.
@@ -46,6 +83,7 @@ export type VehicleType = "Vehículo PURP" | "Otro vehículo";
 // Registro de una persona o vehículo que entra sin pasar por el flujo de viaje.
 export interface AccessRecord {
   id: string;
+  folio?: string;
   nombre: string;
   vehiculo: VehicleType;
   vehiculo_purp?: string;
@@ -56,6 +94,7 @@ export interface AccessRecord {
   operador_entrada?: string;
   operador_salida?: string;
   planta?: string;
+  odoo_url?: string;
 }
 
 // Textos amigables que se muestran al usuario en lugar de claves técnicas.
@@ -64,7 +103,9 @@ export const STATUS_LABELS: Record<TripStatus, string> = {
   en_camino: "En Camino",
   en_revision: "En Revisión",
   en_espera: "En Espera",
-  en_proceso: "En Proceso",
+  bascula: "Báscula",
+  embarque: "Embarque",
+  administrativo: "Administrativo",
   finalizado: "Finalizado",
 };
 
@@ -74,7 +115,9 @@ export const STATUS_COLORS: Record<TripStatus, string> = {
   en_camino: "bg-info text-info-foreground",
   en_revision: "bg-warning text-warning-foreground",
   en_espera: "bg-accent text-accent-foreground",
-  en_proceso: "bg-primary text-primary-foreground",
+  bascula: "bg-primary text-primary-foreground",
+  embarque: "bg-blue-600 text-white",
+  administrativo: "bg-purple-600 text-white",
   finalizado: "bg-muted text-muted-foreground",
 };
 

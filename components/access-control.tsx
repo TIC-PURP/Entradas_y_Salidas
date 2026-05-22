@@ -3,7 +3,7 @@
 // Interfaz de apoyo para registrar accesos y salidas de visitantes o unidades internas.
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, ArrowLeft, Building2, Car, Clock, LogOut, Plus, RefreshCw, Search, User } from "lucide-react";
+import { AlertCircle, ArrowLeft, Car, Clock, LogOut, Plus, Printer, RefreshCw, Search, User } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import { createAccessRecord, getAccessRecords, getFleetVehicles, registerAccessE
 interface AccessControlProps {
   onBack: () => void;
   employee: EmployeeSession;
+  context?: any;
+  activePlant?: string;
   prefillName?: string;
   initialSearch?: string;
   autoCreate?: boolean;
@@ -23,7 +25,7 @@ interface AccessControlProps {
 }
 
 // Control completo de accesos manuales usado cuando se necesita una vista dedicada.
-export function AccessControl({ onBack, employee, prefillName = "", initialSearch = "", autoCreate = false, prefillEmployeeId }: AccessControlProps) {
+export function AccessControl({ onBack, employee, context, activePlant = "", prefillName = "", initialSearch = "", autoCreate = false, prefillEmployeeId }: AccessControlProps) {
   const [records, setRecords] = useState<AccessRecord[]>([]);
   const [fleetVehicles, setFleetVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +42,7 @@ export function AccessControl({ onBack, employee, prefillName = "", initialSearc
   useEffect(() => {
     loadRecords();
     loadFleetVehicles();
-  }, [employee]);
+  }, []);
 
   useEffect(() => {
     if (prefillName) {
@@ -53,7 +55,7 @@ export function AccessControl({ onBack, employee, prefillName = "", initialSearc
   const loadRecords = async () => {
     setLoading(true);
     try {
-      setRecords(await getAccessRecords(employee));
+      setRecords(await getAccessRecords(context));
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudieron cargar los registros de acceso";
       toast.error(message);
@@ -101,6 +103,7 @@ export function AccessControl({ onBack, employee, prefillName = "", initialSearc
       return (
         r.nombre.toLowerCase().includes(term) ||
         r.id.toLowerCase().includes(term) ||
+        (r.folio ?? "").toLowerCase().includes(term) ||
         (displayVehiculoPurp ?? "").toLowerCase().includes(term) ||
         (r.descripcion_vehiculo ?? "").toLowerCase().includes(term)
       );
@@ -111,6 +114,108 @@ export function AccessControl({ onBack, employee, prefillName = "", initialSearc
     if (!value) return "—";
     return new Date(value).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" });
   };
+
+
+  const printTicket = (record: AccessRecord) => {
+    const folio = record.folio?.trim();
+    if (!folio) {
+      toast.error("No se puede imprimir", {
+        description: "Esta entrada aún no tiene folio generado por Odoo. Actualiza la lista e intenta de nuevo.",
+      });
+      return;
+    }
+
+    const title = record.nombre || "Entrada a Planta";
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=0&data=${encodeURIComponent(folio)}`;
+    const ticket = window.open("", "_blank", "width=420,height=640");
+    if (!ticket) {
+      toast.error("El navegador bloqueó la ventana de impresión");
+      return;
+    }
+
+    ticket.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Ticket ${folio}</title>
+          <meta charset="utf-8" />
+          <style>
+            @page { size: 58mm auto; margin: 4mm; }
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              font-family: Arial, Helvetica, sans-serif;
+              color: #111827;
+              background: #ffffff;
+              text-align: center;
+            }
+            .ticket {
+              width: 100%;
+              max-width: 58mm;
+              margin: 0 auto;
+              padding: 2mm 1mm;
+            }
+            .name {
+              font-size: 18px;
+              line-height: 1.08;
+              font-weight: 800;
+              margin: 0 0 4mm;
+              word-break: break-word;
+            }
+            .folio {
+              font-size: 15px;
+              font-weight: 800;
+              letter-spacing: .2px;
+              margin: 0 0 6mm;
+            }
+            .folio span { font-weight: 500; }
+            img {
+              width: 42mm;
+              height: 42mm;
+              image-rendering: pixelated;
+              display: block;
+              margin: 0 auto 7mm;
+            }
+            .line {
+              border-top: 1px dashed #9ca3af;
+              margin: 0 0 3mm;
+            }
+            .footer {
+              font-size: 13px;
+              font-weight: 600;
+              color: #374151;
+            }
+            @media print {
+              body { margin: 0; }
+              .ticket { max-width: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <main class="ticket">
+            <h1 class="name">${escapeHtml(title)}</h1>
+            <p class="folio">Folio: <span>${escapeHtml(folio)}</span></p>
+            <img src="${qrUrl}" alt="QR ${escapeHtml(folio)}" />
+            <div class="line"></div>
+            <div class="footer">Entrada a Planta</div>
+          </main>
+          <script>
+            const img = document.querySelector('img');
+            const doPrint = () => setTimeout(() => { window.print(); }, 250);
+            if (img && !img.complete) img.onload = doPrint; else doPrint();
+          </script>
+        </body>
+      </html>
+    `);
+    ticket.document.close();
+  };
+
+  const escapeHtml = (value: string) => value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 
   // Valida los campos básicos y registra una nueva entrada manual.
   const handleCreate = async () => {
@@ -136,8 +241,8 @@ export function AccessControl({ onBack, employee, prefillName = "", initialSearc
         descripcion_vehiculo: descripcionVehiculo.trim(),
         employeeId: employee.id,
         accessEmployeeId: prefillEmployeeId,
-        work_location: employee.work_location,
-      });
+        planta: activePlant,
+      }, context);
       setRecords((prev) => [record, ...prev]);
       setNombre("");
       setDescripcionVehiculo("");
@@ -150,7 +255,7 @@ export function AccessControl({ onBack, employee, prefillName = "", initialSearc
 
   // Marca la salida de un registro y actualiza la lista en pantalla.
   const handleExit = async (id: string) => {
-    const updated = await registerAccessExit(id, employee.id);
+    const updated = await registerAccessExit(id, employee.id, context);
     if (!updated) return;
     setRecords((prev) => prev.map((r) => (r.id === id ? updated : r)));
     toast.success("Salida registrada");
@@ -178,7 +283,7 @@ export function AccessControl({ onBack, employee, prefillName = "", initialSearc
             <Input placeholder="Nombre visitante o empleado..." className="h-12 text-base" value={nombre} onChange={(e) => setNombre(e.target.value)} />
             {prefillName && (
               <div className="rounded-md border border-primary/30 bg-primary/10 p-3 text-sm text-primary">
-                Gafete detectado
+                Gafete detectado: {prefillName}.
               </div>
             )}
             <select className="h-12 w-full rounded-md bg-secondary px-3 text-base border border-border" value={vehiculo} onChange={(e) => setVehiculo(e.target.value as VehicleType)}>
@@ -254,13 +359,21 @@ export function AccessControl({ onBack, employee, prefillName = "", initialSearc
                       <span className="break-words">{record.vehiculo === "Vehículo PURP" ? (vehicleNameById.get(String(record.vehiculo_purp)) || record.vehiculo_purp) : record.descripcion_vehiculo}</span>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {record.planta && (
-                      <Badge variant="secondary" className="w-fit">
-                        <Building2 className="mr-1 h-3 w-3" />
-                        {record.planta}
-                      </Badge>
-                    )}
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="flex items-center gap-2">
+                      {record.folio && <Badge variant="outline" className="w-fit">{record.folio}</Badge>}
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="secondary"
+                        className="h-9 w-9 rounded-full"
+                        title="Imprimir ticket de entrada"
+                        onClick={() => printTicket(record)}
+                      >
+                        <Printer className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {record.planta && <Badge variant="outline" className="w-fit">{record.planta}</Badge>}
                     <Badge className={`w-fit ${ACCESS_STATUS_COLORS[record.estado]}`}>{ACCESS_STATUS_LABELS[record.estado]}</Badge>
                   </div>
                 </div>

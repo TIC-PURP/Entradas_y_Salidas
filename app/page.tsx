@@ -1,51 +1,95 @@
 "use client";
 
-// Pantalla principal de caseta: escanea códigos, busca viajes y muestra el resultado al guardia.
+// Pantalla principal: login Odoo, permisos PWA, scanner y operación de caseta.
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Scanner } from "@/components/scanner";
 import { TripCard } from "@/components/trip-card";
 import { ManualMode } from "@/components/manual-mode";
-import { EmployeeSession, Trip } from "@/lib/types";
-import { getTripByCode, lookupEmployeeAccess } from "@/lib/api";
+import type { AppSession, EmployeeSession, Trip } from "@/lib/types";
+import { buildOdooContext, getAccessByCode, getTripByCode, lookupEmployeeAccess, updatePwaPlant } from "@/lib/api";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { NotificationsButton } from "@/components/notifications-button";
-import { clearStoredEmployee, EmployeeLogin } from "@/components/employee-login";
+import { clearStoredSession, EmployeeLogin, storeSession, storeTheme } from "@/components/employee-login";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { LogOut, UserCheck } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LogOut, Settings, UserCheck } from "lucide-react";
 import { AccessControl } from "@/components/access-control";
 
-// Vistas posibles de la pantalla principal: cámara, detalle del viaje o búsqueda manual.
 type AppView = "scanner" | "trip" | "manual" | "access";
+const PLANTS = ["Pinitos", "Burrión"];
 
 export default function Home() {
-  // Guarda qué pantalla ve el guardia en este momento.
   const [view, setView] = useState<AppView>("scanner");
-  // Guarda el viaje encontrado para mostrar sus datos y acciones.
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
-  // Evita dobles búsquedas mientras el sistema consulta la información.
   const [isLoading, setIsLoading] = useState(false);
-  // Empleado operativo autenticado en la PWA. No es usuario de Odoo; es hr.employee.
-  const [employee, setEmployee] = useState<EmployeeSession | null>(null);
+  const [session, setSession] = useState<AppSession | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [accessPrefillName, setAccessPrefillName] = useState("");
   const [accessSearch, setAccessSearch] = useState("");
   const [accessEmployeeId, setAccessEmployeeId] = useState<number | undefined>(undefined);
-  const scanInFlightRef = useRef(false);
 
-  // Cuando la cámara o el modo manual entregan un código, se busca el viaje correspondiente.
+  const permissions = session?.permissions;
+  const operativeEmployee = useMemo<EmployeeSession | undefined>(() => {
+    return session?.employee || session?.permissions.empleado || undefined;
+  }, [session]);
+
+  const context = useMemo(() => buildOdooContext(session), [session]);
+  const canSeeLogistics = Boolean(permissions?.puede_logistica);
+  const canOpenManualMode = Boolean(permissions?.puede_logistica || permissions?.puede_entrada_salida);
+
+  useEffect(() => {
+    const theme = session?.theme || "dark";
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [session?.theme]);
+
+  const updateSession = useCallback((patch: Partial<AppSession>) => {
+    setSession((current) => {
+      if (!current) return current;
+      const updated = { ...current, ...patch };
+      storeSession(updated);
+      return updated;
+    });
+  }, []);
+
   const handleScan = useCallback(async (code: string) => {
-    if (isLoading || scanInFlightRef.current) return;
-    
-    scanInFlightRef.current = true;
+    if (isLoading || !session) return;
     setIsLoading(true);
+
     try {
-      const trip = await getTripByCode(code, employee || undefined);
+      const trip = canSeeLogistics ? await getTripByCode(code, context) : null;
       if (trip) {
+        if (permissions?.puede_abrir_odoo && !permissions?.puede_entrada_salida) {
+          toast.success(`Abriendo ${trip.folio} en Odoo`);
+          window.location.href = trip.odoo_url || `${process.env.NEXT_PUBLIC_ODOO_URL || ""}/odoo/x_viajes/${trip.id}`;
+          return;
+        }
+
         setSelectedTrip(trip);
         setView("trip");
         toast.success(`Viaje ${trip.folio} encontrado`);
+        return;
+      }
+
+      if (!permissions?.puede_entrada_salida) {
+        toast.error("Código no encontrado", {
+          description: "Este usuario puede abrir documentos de Odoo, pero el código no corresponde a un viaje visible.",
+        });
+        return;
+      }
+
+      const accessByFolio = await getAccessByCode(code, context);
+      if (accessByFolio) {
+        setAccessPrefillName("");
+        setAccessSearch(accessByFolio.folio || accessByFolio.nombre || String(accessByFolio.id));
+        setAccessEmployeeId(undefined);
+        setView("access");
+        toast.success("Entrada encontrada", {
+          description: `${accessByFolio.folio || accessByFolio.nombre}. Puedes registrar la salida.`,
+        });
         return;
       }
 
@@ -74,11 +118,9 @@ export default function Home() {
       });
     } finally {
       setIsLoading(false);
-      scanInFlightRef.current = false;
     }
-  }, [employee, isLoading]);
+  }, [context, isLoading, permissions?.puede_abrir_odoo, permissions?.puede_entrada_salida, session, canSeeLogistics]);
 
-  // Refresca la tarjeta cuando una acción cambia el estado del viaje.
   const handleTripUpdate = useCallback((updatedTrip: Trip) => {
     setSelectedTrip(updatedTrip);
     toast.success("Estado actualizado", {
@@ -86,11 +128,14 @@ export default function Home() {
     });
   }, []);
 
-  // Permite abrir un viaje elegido desde la búsqueda manual o desde notificaciones.
   const handleSelectTrip = useCallback((trip: Trip) => {
+    if (permissions?.puede_abrir_odoo && !permissions?.puede_entrada_salida) {
+      window.location.href = trip.odoo_url || "#";
+      return;
+    }
     setSelectedTrip(trip);
     setView("trip");
-  }, []);
+  }, [permissions?.puede_abrir_odoo, permissions?.puede_entrada_salida]);
 
   const handleBack = useCallback(() => {
     setSelectedTrip(null);
@@ -100,30 +145,24 @@ export default function Home() {
     setView("scanner");
   }, []);
 
-  const handleManualMode = useCallback(() => {
-    setView("manual");
-  }, []);
-
-  const handleBackToScanner = useCallback(() => {
-    setView("scanner");
-  }, []);
-
   const handleLogout = useCallback(() => {
-    clearStoredEmployee();
-    setEmployee(null);
+    clearStoredSession();
+    setSession(null);
     setSelectedTrip(null);
     setView("scanner");
-    toast.info("Sesión de operador cerrada");
+    toast.info("Sesión cerrada");
   }, []);
 
-  if (!employee) {
+  if (!session) {
     return (
       <>
-        <EmployeeLogin onLogin={setEmployee} />
+        <EmployeeLogin onLogin={setSession} />
         <Toaster position="top-center" richColors />
       </>
     );
   }
+
+  const canOperateAccess = Boolean(permissions?.puede_entrada_salida && operativeEmployee?.id);
 
   return (
     <main className="min-h-dvh flex flex-col bg-background">
@@ -132,71 +171,135 @@ export default function Home() {
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <UserCheck className="h-4 w-4 text-primary" />
-              <span className="truncate">{employee.name}</span>
+              <span className="truncate">{session.odooUser.name}</span>
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <p className="truncate text-xs text-muted-foreground">
-                {employee.job_title || employee.department || "Operador PWA"}
-              </p>
-              {employee.work_location && (
-                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                  {employee.work_location}
-                </Badge>
-              )}
-              {employee.can_view_all_locations && (
-                <Badge className="h-5 px-1.5 text-[10px]">
-                  Supervisor
-                </Badge>
-              )}
-            </div>
+            <p className="truncate text-xs text-muted-foreground">
+              {session.activePlant || permissions?.planta_predeterminada || "Sin planta"}
+              {operativeEmployee?.name ? ` • ${operativeEmployee.name}` : ""}
+            </p>
           </div>
-          <Button variant="secondary" size="sm" onClick={handleLogout}>
-            <LogOut className="mr-1 h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setSettingsOpen(true)}>
+              <Settings className="h-4 w-4" />
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleLogout}>
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
-      {/* Botón de avisos: si logística manda una alerta, el guardia puede abrir el viaje relacionado. */}
-      <NotificationsButton employee={employee} onOpenTrip={(trip) => { setSelectedTrip(trip); setView("trip"); }} />
+
+      {permissions?.puede_entrada_salida && <NotificationsButton context={context} onOpenTrip={(trip) => { setSelectedTrip(trip); setView("trip"); }} />}
+
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col p-3 sm:p-4 lg:p-6">
-        {/* Pantalla normal: abre la cámara para escanear códigos. */}
         {view === "scanner" && (
           <Scanner
             onScan={handleScan}
-            onManualMode={handleManualMode}
+            onManualMode={() => setView("manual")}
             isLoading={isLoading}
+            showManualMode={canOpenManualMode}
           />
         )}
 
-        {/* Pantalla de detalle: muestra la información y acciones del viaje encontrado. */}
-        {view === "trip" && selectedTrip && (
+        {view === "trip" && selectedTrip && canOperateAccess && operativeEmployee && (
           <TripCard
             trip={selectedTrip}
             onUpdate={handleTripUpdate}
             onBack={handleBack}
-            employee={employee}
+            employee={operativeEmployee}
+            context={context}
           />
         )}
 
-        {/* Alternativa sin cámara: permite buscar el viaje escribiendo datos. */}
-        {view === "manual" && (
+        {view === "manual" && canOpenManualMode && (
           <ManualMode
             onSelectTrip={handleSelectTrip}
-            onBack={handleBackToScanner}
-            employee={employee}
+            onBack={() => setView("scanner")}
+            session={session}
+            employee={operativeEmployee}
           />
         )}
 
-        {view === "access" && (
+        {view === "manual" && !canOpenManualMode && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-destructive">
+            Este usuario no tiene permiso para ver logística ni entradas/salidas.
+          </div>
+        )}
+
+        {view === "access" && canOperateAccess && operativeEmployee && (
           <AccessControl
-            onBack={handleBackToScanner}
-            employee={employee}
+            onBack={() => setView("scanner")}
+            employee={operativeEmployee}
+            context={context}
+            activePlant={session.activePlant || permissions?.planta_predeterminada || ""}
             prefillName={accessPrefillName}
             initialSearch={accessSearch}
             autoCreate={Boolean(accessPrefillName)}
             prefillEmployeeId={accessEmployeeId}
           />
         )}
+
+        {view === "access" && !canOperateAccess && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-destructive">
+            Este usuario no tiene permiso o empleado operativo para registrar entradas/salidas.
+          </div>
+        )}
       </div>
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configuración PWA</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Planta operativa</Label>
+              <Select
+                value={session.activePlant || ""}
+                onValueChange={async (value) => {
+                  try {
+                    const result = await updatePwaPlant(session.permissions.id, value, context);
+                    updateSession({
+                      activePlant: result.plant,
+                      permissions: { ...session.permissions, ...result.permissions, planta_predeterminada: result.plant },
+                    });
+                    toast.success("Planta actualizada", { description: `Permisos PWA actualizados a ${result.plant}.` });
+                  } catch (error) {
+                    toast.error("No se pudo actualizar la planta", { description: error instanceof Error ? error.message : "Error desconocido" });
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona planta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PLANTS.map((plant) => <SelectItem key={plant} value={plant}>{plant}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tema</Label>
+              <Select
+                value={session.theme || "dark"}
+                onValueChange={(value) => {
+                  const theme = value as "dark" | "light";
+                  storeTheme(theme);
+                  updateSession({ theme });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dark">Oscuro</SelectItem>
+                  <SelectItem value="light">Claro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Toaster position="top-center" richColors />
     </main>
   );

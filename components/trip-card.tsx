@@ -37,10 +37,11 @@ interface TripCardProps {
   onUpdate: (trip: Trip) => void;
   onBack: () => void;
   employee: EmployeeSession;
+  context?: any;
 }
 
 // Tarjeta que resume un viaje y ofrece las acciones que caseta puede realizar.
-export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
+export function TripCard({ trip, onUpdate, onBack, employee, context }: TripCardProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
   // Ejecuta una acción del viaje, como validar entrada, pedir revisión o registrar salida.
@@ -78,7 +79,7 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
               size="lg"
               className="h-16 text-lg font-semibold bg-success hover:bg-success/90 text-success-foreground"
               onClick={() =>
-                handleAction(() => validateEntry(trip.folio, employee.id), "validate")
+                handleAction(() => validateEntry(trip.folio, employee.id, context), "validate")
               }
               disabled={loading !== null}
             >
@@ -94,7 +95,7 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
               variant="destructive"
               className="h-16 text-lg font-semibold"
               onClick={() =>
-                handleAction(() => markInvalid(trip.folio, employee.id), "invalid")
+                handleAction(() => markInvalid(trip.folio, employee.id, context), "invalid")
               }
               disabled={loading !== null}
             >
@@ -114,7 +115,7 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
             size="lg"
             className="h-16 text-lg font-semibold w-full bg-warning hover:bg-warning/90 text-warning-foreground"
             onClick={() =>
-              handleAction(() => validateCorrection(trip.folio), "correction")
+              handleAction(() => validateCorrection(trip.folio, context), "correction")
             }
             disabled={loading !== null}
           >
@@ -137,13 +138,33 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
           </div>
         );
 
-      case "en_proceso":
+      case "bascula":
+        return (
+          <div className="flex items-center justify-center gap-3 p-6 bg-primary/10 rounded-lg border border-primary/20">
+            <Clock className="h-8 w-8 text-primary" />
+            <span className="text-lg font-medium text-primary">
+              Viaje en báscula, pendiente de avance operativo
+            </span>
+          </div>
+        );
+
+      case "embarque":
+        return (
+          <div className="flex items-center justify-center gap-3 p-6 bg-blue-600/10 rounded-lg border border-blue-600/20">
+            <Truck className="h-8 w-8 text-blue-600" />
+            <span className="text-lg font-medium text-blue-600">
+              Viaje en embarque, pendiente de administrativo
+            </span>
+          </div>
+        );
+
+      case "administrativo":
         return (
           <Button
             size="lg"
             className="h-16 text-lg font-semibold w-full bg-primary hover:bg-primary/90 text-primary-foreground"
             onClick={() =>
-              handleAction(() => registerExit(trip.folio, employee.id), "exit")
+              handleAction(() => registerExit(trip.folio, employee.id, context), "exit")
             }
             disabled={loading !== null}
           >
@@ -194,10 +215,10 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
                 {trip.folio}
               </h2>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
               {trip.almacen && (
-                <Badge variant="secondary" className="w-fit px-4 py-2 text-sm">
-                  <Building2 className="mr-1 h-4 w-4" />
+                <Badge variant="outline" className="gap-1 border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
+                  <Building2 className="h-4 w-4" />
                   {trip.almacen}
                 </Badge>
               )}
@@ -232,6 +253,13 @@ export function TripCard({ trip, onUpdate, onBack, employee }: TripCardProps) {
               label="Línea Fletera"
               value={trip.linea_fletera}
             />
+            {trip.almacen && (
+              <InfoRow
+                icon={<Building2 className="h-5 w-5" />}
+                label="Almacén"
+                value={trip.almacen}
+              />
+            )}
           </div>
 
           {(trip.fecha_entrada || trip.fecha_salida) && (

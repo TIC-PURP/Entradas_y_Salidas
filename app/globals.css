@@ -7,7 +7,51 @@
 
 @custom-variant dark (&:is(.dark *));
 
+
 :root {
+  /* Light theme - tono claro operativo, limpio y cómodo para caseta/oficina */
+  --background: oklch(0.985 0.006 245);
+  --foreground: oklch(0.19 0.018 245);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.018 245);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.018 245);
+  --primary: oklch(0.53 0.15 245);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.008 245);
+  --secondary-foreground: oklch(0.24 0.02 245);
+  --muted: oklch(0.955 0.008 245);
+  --muted-foreground: oklch(0.48 0.015 245);
+  --accent: oklch(0.79 0.15 78);
+  --accent-foreground: oklch(0.2 0.02 245);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.58 0.15 150);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.8 0.17 82);
+  --warning-foreground: oklch(0.22 0.02 245);
+  --info: oklch(0.62 0.15 235);
+  --info-foreground: oklch(0.99 0 0);
+  --border: oklch(0.875 0.012 245);
+  --input: oklch(0.965 0.006 245);
+  --ring: oklch(0.53 0.15 245);
+  --chart-1: oklch(0.53 0.15 245);
+  --chart-2: oklch(0.65 0.18 45);
+  --chart-3: oklch(0.55 0.22 25);
+  --chart-4: oklch(0.75 0.18 85);
+  --chart-5: oklch(0.65 0.15 230);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.97 0.006 245);
+  --sidebar-foreground: oklch(0.19 0.018 245);
+  --sidebar-primary: oklch(0.53 0.15 245);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.955 0.008 245);
+  --sidebar-accent-foreground: oklch(0.24 0.02 245);
+  --sidebar-border: oklch(0.875 0.012 245);
+  --sidebar-ring: oklch(0.53 0.15 245);
+}
+
+.dark {
   /* Industrial Dark Theme - Inspired by control panels */
   --background: oklch(0.13 0.01 240);
   --foreground: oklch(0.95 0 0);
@@ -102,7 +146,20 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at top left, color-mix(in oklch, var(--primary) 9%, transparent), transparent 32rem),
+      linear-gradient(180deg, color-mix(in oklch, var(--secondary) 55%, transparent), transparent 22rem);
+  }
+
+  .dark body {
+    background-image: none;
+  }
+}
+
+@layer components {
+  .light-card-soft {
+    @apply border-border bg-card shadow-sm;
   }
 }
 

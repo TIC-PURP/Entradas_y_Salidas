@@ -18,12 +18,13 @@ type OdooTrip = {
   x_studio_salida?: string
   x_studio_operador_entrada?: OdooIdName
   x_studio_operador_salida?: OdooIdName
+  x_studio_planta?: string
 }
 
 type OdooAccess = {
   id: number
-  [key: string]: unknown
   x_name?: string
+  x_studio_folio?: string
   x_studio_vehiculo?: string
   x_studio_vehiculo_purp?: OdooIdName
   x_studio_descripcion_del_vehiculo?: string
@@ -32,6 +33,7 @@ type OdooAccess = {
   x_studio_selection_field_87c_1jnb97pu7?: string
   x_studio_operador_entrada?: OdooIdName
   x_studio_operador_salida?: OdooIdName
+  x_studio_planta?: string
 }
 
 type OdooChatterMessage = {
@@ -62,8 +64,10 @@ const STATUS_TO_ODOO: Record<string, string> = {
   en_camino: "status2",
   en_revision: "status3",
   en_espera: "status4",
-  en_proceso: "status5",
-  finalizado: "status6",
+  bascula: "status5",
+  embarque: "status6",
+  administrativo: "status7",
+  finalizado: "status8",
 }
 
 const STATUS_FROM_ODOO: Record<string, string> = Object.fromEntries(
@@ -89,6 +93,9 @@ const cfg = () => ({
   apiKey: process.env.ODOO_API_KEY?.trim(),
   viajesModel: process.env.ODOO_VIAJES_MODEL?.trim() || "x_viajes",
   accessModel: process.env.ODOO_ACCESS_MODEL?.trim() || "x_control_de_acceso",
+  pwaPermissionsModel: process.env.ODOO_PWA_PERMISSIONS_MODEL?.trim() || "x_permisos_pwa",
+  odooViajesActionId: process.env.ODOO_VIAJES_ACTION_ID?.trim() || "1465",
+  accessPlantField: process.env.ODOO_ACCESS_PLANT_FIELD?.trim() || "x_studio_planta",
   notifyField: process.env.ODOO_NOTIFY_FIELD?.trim() || "x_studio_notificar_guardia",
   tripWarehouseField: process.env.ODOO_TRIP_WAREHOUSE_FIELD?.trim() || "x_studio_related_field_7jn_1jn076pgg",
   notificationAckParamKey: process.env.ODOO_NOTIFICATION_ACK_PARAM_KEY?.trim() || "entradas_salidas.guard_notifications.acknowledged.v1",
@@ -98,8 +105,6 @@ const cfg = () => ({
   accessOperatorExitField: process.env.ODOO_ACCESS_OPERATOR_EXIT_FIELD?.trim() || "x_studio_operador_salida",
   employeeWorkLocationField: process.env.ODOO_EMPLOYEE_WORK_LOCATION_FIELD?.trim() || "work_location_id",
   accessPersonEmployeeField: process.env.ODOO_ACCESS_PERSON_EMPLOYEE_FIELD?.trim() || "x_studio_empleado_visitante",
-  accessPlantField: process.env.ODOO_ACCESS_PLANT_FIELD?.trim() || "x_studio_planta_pwa",
-  supervisorCanViewAll: (process.env.ODOO_SUPERVISOR_CAN_VIEW_ALL ?? "true").toLowerCase() !== "false",
   employeeCodeFields: (process.env.ODOO_EMPLOYEE_CODE_FIELDS || "barcode,pin,identification_id,registration_number")
     .split(",")
     .map((field) => field.trim())
@@ -159,6 +164,301 @@ async function authenticate(): Promise<number> {
   return uid
 }
 
+
+async function authenticateCredentials(username: string, password: string): Promise<number> {
+  const c = requireConfig()
+  const uid = await odooRpc<number | false>("common", "authenticate", [c.db, username, password, {}])
+  if (!uid) throw new Error("Usuario o contraseña de Odoo inválidos.")
+  return uid
+}
+
+type PwaPermissionRecord = {
+  id: number
+  x_name?: string
+  x_studio_usuario_odoo?: OdooIdName
+  x_studio_empleado?: OdooIdName
+  x_studio_rol_pwa?: string
+  x_studio_requiere_gafete?: boolean
+  x_studio_puede_abrir_odoo?: boolean
+  x_studio_puede_entradasalida?: boolean
+  x_studio_ve_logistica?: boolean
+  x_studio_ve_todos_los_almacenes?: boolean
+  x_studio_planta_predeterminada?: string
+}
+
+const pwaPermissionFields = [
+  "x_name",
+  "x_studio_usuario_odoo",
+  "x_studio_empleado",
+  "x_studio_rol_pwa",
+  "x_studio_requiere_gafete",
+  "x_studio_puede_abrir_odoo",
+  "x_studio_puede_entradasalida",
+  "x_studio_ve_logistica",
+  "x_studio_ve_todos_los_almacenes",
+  "x_studio_planta_predeterminada",
+]
+
+async function readEmployeeForSession(employeeId?: number, fallbackName?: string) {
+  if (!employeeId) return null
+  const employees = await readRecords<any>("hr.employee", [employeeId], ["name", "job_title", "department_id", "work_location_id", "work_location_name", "active"])
+  const e = employees[0]
+  if (!e?.id) return null
+  if (e.active === false) throw new Error(`El empleado ${e.name || employeeId} está inactivo/archivado en Odoo.`)
+  return {
+    id: e.id,
+    name: e.name || fallbackName || `Empleado ${e.id}`,
+    job_title: e.job_title || "",
+    department: nameOf(e.department_id),
+    work_location: nameOf(e.work_location_id) || e.work_location_name || "",
+    work_location_id: Array.isArray(e.work_location_id) ? e.work_location_id[0] : undefined,
+  } as any
+}
+
+async function mapPermission(perm: PwaPermissionRecord, loginLabel = "") {
+  const employeeId = Array.isArray(perm.x_studio_empleado) ? perm.x_studio_empleado[0] : undefined
+  const employee = await readEmployeeForSession(employeeId, nameOf(perm.x_studio_empleado))
+  return {
+    id: perm.id,
+    name: perm.x_name || `Permisos ${loginLabel}`,
+    role: perm.x_studio_rol_pwa || "usuario",
+    requiere_gafete: Boolean(perm.x_studio_requiere_gafete),
+    puede_abrir_odoo: Boolean(perm.x_studio_puede_abrir_odoo),
+    puede_entrada_salida: Boolean(perm.x_studio_puede_entradasalida),
+    puede_logistica: Boolean(perm.x_studio_ve_logistica),
+    ve_todos_los_almacenes: Boolean(perm.x_studio_ve_todos_los_almacenes),
+    planta_predeterminada: perm.x_studio_planta_predeterminada || "",
+    empleado: employee,
+  }
+}
+
+async function getPwaPermissionRecordsForUser(uid: number) {
+  const c = requireConfig()
+  const records = await searchRead<PwaPermissionRecord>(
+    c.pwaPermissionsModel,
+    [["x_studio_usuario_odoo", "=", uid]],
+    pwaPermissionFields,
+    { limit: 50, order: "id asc" },
+  )
+  return records.filter((record) => record?.id)
+}
+
+async function odooUserLogin(username: string, password: string) {
+  const c = requireConfig()
+  const login = String(username || "").trim()
+  const pass = String(password || "")
+  if (!login || !pass) throw new Error("Captura usuario y contraseña de Odoo.")
+
+  const uid = await authenticateCredentials(login, pass)
+
+  const users = await readRecords<{ id: number; name?: string; login?: string }>("res.users", [uid], ["name", "login"])
+  const user = users[0] || { id: uid, name: login, login }
+  const permissionRecords = await getPwaPermissionRecordsForUser(uid)
+
+  if (permissionRecords.length === 0) {
+    throw new Error(`El usuario ${user.login || login} no tiene registro en Permisos PWA (${c.pwaPermissionsModel}).`)
+  }
+
+  const badgePermissions = permissionRecords.filter((perm) => Boolean(perm.x_studio_requiere_gafete))
+  const directPermissions = permissionRecords.filter((perm) => !Boolean(perm.x_studio_requiere_gafete))
+
+  // Regla de seguridad: no mezclar perfiles directos y perfiles con gafete en el mismo usuario Odoo.
+  // Si se mezclan, la PWA no puede saber si debe entrar como admin directo o pedir empleado operativo.
+  if (badgePermissions.length > 0 && directPermissions.length > 0) {
+    throw new Error(
+      `El usuario ${user.login || login} tiene permisos PWA mezclados: unos requieren gafete y otros no. Usa un usuario Odoo distinto para administración o deja activos solo perfiles de guardia con gafete.`,
+    )
+  }
+
+  // Para usuarios compartidos de guardia sí se permiten varios registros, uno por empleado autorizado.
+  if (badgePermissions.length > 0) {
+    const withoutEmployee = badgePermissions.filter((perm) => !Array.isArray(perm.x_studio_empleado))
+    if (withoutEmployee.length > 0) {
+      throw new Error(
+        `El usuario ${user.login || login} tiene permisos de guardia que requieren gafete, pero hay registros sin Empleado relacionado. Relaciona cada permiso con un empleado autorizado.`,
+      )
+    }
+
+    const basePermission = await mapPermission(badgePermissions[0], user.login || login)
+    return {
+      user: {
+        uid,
+        name: user.name || login,
+        login: user.login || login,
+      },
+      permissions: {
+        ...basePermission,
+        empleado: null,
+      },
+      allowedEmployeeIds: badgePermissions
+        .map((perm) => Array.isArray(perm.x_studio_empleado) ? perm.x_studio_empleado[0] : null)
+        .filter(Boolean),
+    }
+  }
+
+  if (directPermissions.length !== 1) {
+    throw new Error(
+      `El usuario ${user.login || login} tiene ${directPermissions.length} perfiles PWA directos. Debe existir exactamente un perfil activo sin gafete.`,
+    )
+  }
+
+  return {
+    user: {
+      uid,
+      name: user.name || login,
+      login: user.login || login,
+    },
+    permissions: await mapPermission(directPermissions[0], user.login || login),
+  }
+}
+
+
+async function refreshAppSession(session: any) {
+  const uid = Number(session?.odooUser?.uid)
+  if (!Number.isFinite(uid) || uid <= 0) {
+    throw new Error("La sesión local no tiene usuario Odoo válido. Vuelve a iniciar sesión.")
+  }
+
+  const permissionRecords = await getPwaPermissionRecordsForUser(uid)
+  if (permissionRecords.length === 0) {
+    throw new Error("Este usuario Odoo ya no tiene permisos PWA activos. Vuelve a iniciar sesión o revisa x_permisos_pwa.")
+  }
+
+  const badgePermissions = permissionRecords.filter((perm) => Boolean(perm.x_studio_requiere_gafete))
+  const directPermissions = permissionRecords.filter((perm) => !Boolean(perm.x_studio_requiere_gafete))
+
+  if (badgePermissions.length > 0 && directPermissions.length > 0) {
+    throw new Error("Este usuario Odoo tiene permisos PWA mezclados con y sin gafete. Corrige x_permisos_pwa para evitar ambigüedad.")
+  }
+
+  const sessionEmployeeId = Number(session?.employee?.id || session?.permissions?.empleado?.id)
+
+  if (badgePermissions.length > 0) {
+    if (!Number.isFinite(sessionEmployeeId) || sessionEmployeeId <= 0) {
+      throw new Error("Este usuario requiere gafete. Vuelve a identificar al empleado operativo.")
+    }
+
+    const matchingPermissions = badgePermissions.filter((perm) => {
+      const employeeId = Array.isArray(perm.x_studio_empleado) ? perm.x_studio_empleado[0] : undefined
+      return employeeId === sessionEmployeeId
+    })
+
+    if (matchingPermissions.length === 0) {
+      throw new Error("El empleado de la sesión ya no está autorizado para este usuario Odoo en Permisos PWA.")
+    }
+
+    if (matchingPermissions.length > 1) {
+      throw new Error("El empleado de la sesión tiene más de un permiso PWA activo para este usuario. Deja solo uno para evitar ambigüedad.")
+    }
+
+    const employee = await readEmployeeForSession(sessionEmployeeId, session?.employee?.name)
+    const permissions = await mapPermission(matchingPermissions[0], String(uid))
+    const effectiveEmployee = employee || permissions.empleado || session.employee || null
+
+    return {
+      ...session,
+      permissions: {
+        ...permissions,
+        empleado: effectiveEmployee,
+      },
+      employee: effectiveEmployee,
+      activePlant: permissions.planta_predeterminada || effectiveEmployee?.work_location || session?.activePlant || "",
+    }
+  }
+
+  if (directPermissions.length !== 1) {
+    throw new Error(`Este usuario Odoo tiene ${directPermissions.length} perfiles PWA directos. Debe existir exactamente uno activo sin gafete.`)
+  }
+
+  const permissions = await mapPermission(directPermissions[0], String(uid))
+  const effectiveEmployee = permissions.empleado || null
+
+  return {
+    ...session,
+    permissions,
+    employee: effectiveEmployee,
+    activePlant: permissions.planta_predeterminada || effectiveEmployee?.work_location || session?.activePlant || "",
+  }
+}
+
+async function employeePermissionLogin(code: string, odooUid: number) {
+  const uid = Number(odooUid)
+  if (!Number.isFinite(uid) || uid <= 0) throw new Error("No se recibió el usuario Odoo para validar permisos del gafete.")
+
+  const employee = await employeeLogin(code)
+  const permissionRecords = await getPwaPermissionRecordsForUser(uid)
+  const matchingPermissions = permissionRecords.filter((perm) => {
+    const employeeId = Array.isArray(perm.x_studio_empleado) ? perm.x_studio_empleado[0] : undefined
+    return Boolean(perm.x_studio_requiere_gafete) && employeeId === employee.id
+  })
+
+  if (matchingPermissions.length === 0) {
+    throw new Error(
+      `El empleado ${employee.name} existe en Odoo, pero no está autorizado en Permisos PWA para este usuario Odoo. Relaciónalo en x_permisos_pwa o usa un gafete autorizado.`,
+    )
+  }
+
+  if (matchingPermissions.length > 1) {
+    throw new Error(
+      `El empleado ${employee.name} tiene más de un permiso PWA para este usuario. Deja solo un permiso para evitar ambigüedad de planta/rol.`,
+    )
+  }
+
+  const permissions = await mapPermission(matchingPermissions[0], String(uid))
+  return {
+    employee,
+    permissions: {
+      ...permissions,
+      empleado: employee,
+    },
+  }
+}
+
+type AccessContext = {
+  activePlant?: string
+  canSeeAll?: boolean
+  employee?: { id?: number; work_location?: string; work_location_id?: number }
+}
+
+function contextPlant(context?: AccessContext | any) {
+  return String(context?.activePlant || context?.work_location || context?.employee?.work_location || "").trim()
+}
+
+function contextCanSeeAll(context?: AccessContext | any) {
+  // La visibilidad global debe venir EXCLUSIVAMENTE del permiso de Odoo:
+  // x_permisos_pwa.x_studio_ve_todos_los_almacenes.
+  return Boolean(context?.permissions?.ve_todos_los_almacenes || context?.ve_todos_los_almacenes === true || context?.canSeeAll === true)
+}
+
+function contextCanOpenOdoo(context?: AccessContext | any) {
+  return Boolean(context?.permissions?.puede_abrir_odoo || context?.puede_abrir_odoo === true)
+}
+
+function contextCanSeeLogistics(context?: AccessContext | any) {
+  return Boolean(context?.permissions?.puede_logistica || context?.puede_logistica === true)
+}
+
+function contextCanOperateAccess(context?: AccessContext | any) {
+  return Boolean(context?.permissions?.puede_entrada_salida || context?.puede_entrada_salida === true)
+}
+
+function contextEmployeeId(context?: AccessContext | any) {
+  const id = Number(context?.employee?.id || context?.permissions?.empleado?.id || context?.employeeId)
+  return Number.isFinite(id) && id > 0 ? id : undefined
+}
+
+function assertCanOperateAccess(context?: AccessContext | any) {
+  if (!contextCanOperateAccess(context)) {
+    throw new Error("Este usuario no tiene permiso PWA para registrar entradas/salidas. Revisa x_permisos_pwa.x_studio_puede_entradasalida.")
+  }
+}
+
+function assertCanReadTrips(context?: AccessContext | any) {
+  if (!contextCanSeeLogistics(context)) {
+    throw new Error("Este usuario no tiene permiso PWA para ver logística/viajes. Revisa x_permisos_pwa.x_studio_ve_logistica.")
+  }
+}
+
 // Ejecuta una operación sobre un modelo de Odoo, como buscar, crear o actualizar registros.
 async function callKw<T>(model: string, method: string, args: unknown[] = [], kwargs: Record<string, unknown> = {}): Promise<T> {
   const c = requireConfig()
@@ -203,9 +503,10 @@ async function existingValues(model: string, values: Record<string, unknown>) {
 }
 
 function orDomain(terms: unknown[][]) {
-  if (terms.length === 0) return []
-  if (terms.length === 1) return terms[0]
-  return [...Array(terms.length - 1).fill("|"), ...terms]
+  const clean = terms.filter((term) => Array.isArray(term) && term.length === 3)
+  if (clean.length === 0) return []
+  if (clean.length === 1) return [clean[0]]
+  return [...Array(clean.length - 1).fill("|"), ...clean]
 }
 
 function nameOf(value?: OdooIdName | number | string) {
@@ -220,10 +521,6 @@ function normalizeLocation(value?: unknown) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")
-}
-
-function canViewAllLocations(employee?: { can_view_all_locations?: boolean }) {
-  return Boolean(employee?.can_view_all_locations)
 }
 
 function locationsMatch(employeeLocation?: unknown, tripWarehouse?: unknown) {
@@ -249,14 +546,12 @@ function toOdooDatetime(value: unknown) {
 // Convierte un registro de viaje de Odoo al formato simple que entienden las pantallas.
 function mapTrip(record: OdooTrip) {
   const warehouseField = cfg().tripWarehouseField
-  const almacen = nameOf(record[warehouseField] as OdooIdName | number | string)
   return {
     id: record.id,
     folio: record.x_name || "",
     orden: nameOf(record.x_studio_orden_de_venta),
     movimiento_origen: nameOf(record.x_studio_transferencia),
-    almacen,
-    planta: almacen,
+    almacen: nameOf(record[warehouseField] as OdooIdName | number | string),
     chofer: record.x_studio_chofer || "",
     placas: record.x_studio_placa || "",
     linea_fletera: nameOf(record.x_studio_linea_fletera_1),
@@ -265,15 +560,17 @@ function mapTrip(record: OdooTrip) {
     fecha_salida: record.x_studio_salida || undefined,
     operador_entrada: nameOf(record.x_studio_operador_entrada),
     operador_salida: nameOf(record.x_studio_operador_salida),
+    planta: record.x_studio_planta || "",
+    odoo_url: `${cfg().url}/odoo/action-${cfg().odooViajesActionId}/${record.id}`,
   }
 }
 
 // Convierte un acceso manual de Odoo al formato que muestra la app.
 function mapAccess(record: OdooAccess) {
-  const accessPlantField = cfg().accessPlantField
   const odooStatus = record.x_studio_selection_field_87c_1jnb97pu7 || "status2"
   return {
     id: String(record.id),
+    folio: record.x_studio_folio || "",
     nombre: record.x_name || "",
     vehiculo: record.x_studio_vehiculo || "Otro vehículo",
     vehiculo_purp: nameOf(record.x_studio_vehiculo_purp),
@@ -283,7 +580,8 @@ function mapAccess(record: OdooAccess) {
     fecha_salida: record.x_studio_salida_planta || undefined,
     operador_entrada: nameOf(record.x_studio_operador_entrada),
     operador_salida: nameOf(record.x_studio_operador_salida),
-    planta: nameOf(record[accessPlantField] as OdooIdName | number | string),
+    planta: record.x_studio_planta || "",
+    odoo_url: `${cfg().url}/odoo/action-${cfg().odooViajesActionId}/${record.id}`,
   }
 }
 
@@ -304,6 +602,7 @@ const tripFields = [
 
 const accessFields = [
   "x_name",
+  "x_studio_folio",
   "x_studio_vehiculo",
   "x_studio_vehiculo_purp",
   "x_studio_descripcion_del_vehiculo",
@@ -312,7 +611,7 @@ const accessFields = [
   "x_studio_selection_field_87c_1jnb97pu7",
   "x_studio_operador_entrada",
   "x_studio_operador_salida",
-  cfg().accessPlantField,
+  "x_studio_planta",
 ]
 
 
@@ -369,8 +668,6 @@ async function employeeLogin(code: string) {
     "work_location_id",
     "work_location_name",
     "active",
-    "parent_id",
-    "child_count",
   ])
 
   type EmployeeLoginRecord = {
@@ -382,8 +679,6 @@ async function employeeLogin(code: string) {
     work_location_name?: string
     [key: string]: unknown
     active?: boolean
-    parent_id?: OdooIdName
-    child_count?: number
   }
 
   let records: EmployeeLoginRecord[]
@@ -421,20 +716,6 @@ async function employeeLogin(code: string) {
   const locationValue = employee[c.employeeWorkLocationField] as OdooIdName | string | undefined
   const defaultLocation = employee.work_location_id
 
-  let canViewAll = false
-  if (c.supervisorCanViewAll) {
-    if (Number(employee.child_count || 0) > 0) {
-      canViewAll = true
-    } else {
-      try {
-        const subordinates = await callKw<number>("hr.employee", "search_count", [[["parent_id", "=", employee.id], ["active", "=", true]]])
-        canViewAll = subordinates > 0
-      } catch (error) {
-        console.warn("No pude validar subordinados del empleado para permisos de supervisor.", error)
-      }
-    }
-  }
-
   return {
     id: employee.id,
     name: employee.name || `Empleado ${employee.id}`,
@@ -442,7 +723,6 @@ async function employeeLogin(code: string) {
     department: nameOf(employee.department_id),
     work_location: nameOf(locationValue) || nameOf(defaultLocation) || employee.work_location_name || "",
     work_location_id: Array.isArray(locationValue) ? locationValue[0] : Array.isArray(defaultLocation) ? defaultLocation[0] : undefined,
-    can_view_all_locations: canViewAll,
   }
 }
 
@@ -482,28 +762,29 @@ async function safeWrite(model: string, ids: number[], values: Record<string, un
   }
 }
 
-async function getTrips(domain: unknown[] = [], employee?: { id?: number; work_location?: string; work_location_id?: number; can_view_all_locations?: boolean }) {
+async function getTrips(domain: unknown[] = [], context?: AccessContext | any) {
+  assertCanReadTrips(context)
   const c = cfg()
-  const locationDomain = employeeTripDomain(employee)
-  const finalDomain = andDomain(domain, locationDomain)
+  const plantDomain = tripPlantDomain(context)
+  const finalDomain = andDomain(domain, plantDomain)
   const records = await searchRead<OdooTrip>(c.viajesModel!, finalDomain, tripFields, { limit: 100, order: "id desc" })
-  const mapped = records.map(mapTrip)
-  if (canViewAllLocations(employee)) return mapped
-  return mapped.filter((trip) => locationsMatch(employee?.work_location, trip.almacen))
+  const plant = contextPlant(context)
+  return records.map(mapTrip).filter((trip) => contextCanSeeAll(context) || locationsMatch(plant, trip.almacen))
 }
 
-function employeeTripDomain(employee?: { id?: number; work_location?: string; work_location_id?: number; can_view_all_locations?: boolean }) {
+function tripPlantDomain(context?: AccessContext | any) {
   const c = cfg()
-  if (canViewAllLocations(employee)) return []
-  if (!employee?.work_location && !employee?.work_location_id) return []
-
-  // Si el campo de almacén del viaje es many2one, el filtro por ID es el más confiable.
-  // Si no coincide con el ID de ubicación de trabajo, se aplica también un filtro ilike por nombre.
+  if (contextCanSeeAll(context)) return []
+  const employee = context?.employee || context
+  const plant = contextPlant(context)
   const parts: unknown[][] = []
-  if (employee.work_location_id) parts.push([c.tripWarehouseField, "=", Number(employee.work_location_id)])
-  if (employee.work_location) parts.push([c.tripWarehouseField, "ilike", String(employee.work_location)])
-
+  if (employee?.work_location_id) parts.push([c.tripWarehouseField, "=", Number(employee.work_location_id)])
+  if (plant) parts.push([c.tripWarehouseField, "ilike", plant])
   return orDomain(parts)
+}
+
+function employeeTripDomain(employee?: { id?: number; work_location?: string; work_location_id?: number }) {
+  return tripPlantDomain(employee)
 }
 
 function andDomain(...domains: unknown[][]) {
@@ -514,22 +795,25 @@ function andDomain(...domains: unknown[][]) {
 }
 
 // Busca un viaje usando el dato escaneado o escrito: folio, orden o placas.
-async function getTripByCode(code: string, employee?: { id?: number; work_location?: string; work_location_id?: number; can_view_all_locations?: boolean }) {
+async function getTripByCode(code: string, context?: AccessContext | any) {
+  assertCanReadTrips(context)
   const c = cfg()
   const clean = String(code || "").trim()
   const available = await getModelFields(c.viajesModel!)
   const searchFields = ["x_name", "x_studio_placa", "x_studio_chofer"].filter((field) => available.has(field))
   const searchDomain = orDomain(searchFields.map((field) => [field, "=ilike", clean]))
-  const domain = andDomain(searchDomain, employeeTripDomain(employee))
+  const domain = andDomain(searchDomain, tripPlantDomain(context))
   const records = await searchRead<OdooTrip>(c.viajesModel!, domain, tripFields, { limit: 5 })
-  const trips = records.map(mapTrip).filter((trip) => trip.estado !== "planeado" && (canViewAllLocations(employee) || locationsMatch(employee?.work_location, trip.almacen)))
+  const plant = contextPlant(context)
+  const trips = records.map(mapTrip).filter((trip) => trip.estado !== "planeado" && (contextCanSeeAll(context) || locationsMatch(plant, trip.almacen)))
   return trips[0] || null
 }
 
 // Actualiza el estado del viaje y guarda fechas de entrada o salida cuando aplica.
-async function updateTripStatus(folio: string, newStatus: string, additionalData: Record<string, unknown> = {}) {
+async function updateTripStatus(folio: string, newStatus: string, additionalData: Record<string, unknown> = {}, context?: AccessContext | any) {
+  assertCanOperateAccess(context)
   const c = cfg()
-  const trip = await getTripByCode(folio)
+  const trip = await getTripByCode(folio, context)
   if (!trip?.id) return null
 
   const status = STATUS_TO_ODOO[newStatus]
@@ -550,7 +834,7 @@ async function updateTripStatus(folio: string, newStatus: string, additionalData
   if (["en_espera", "en_revision", "finalizado"].includes(newStatus)) {
     await acknowledgeTripNotifications(trip.id)
   }
-  return getTripByCode(folio)
+  return getTripByCode(folio, context)
 }
 
 async function getFleetVehicles() {
@@ -633,28 +917,50 @@ async function findFleetVehicleId(value?: string) {
   return found?.[0]?.[0] || null
 }
 
-async function getAccessRecords(employee?: { id?: number; work_location?: string; work_location_id?: number; can_view_all_locations?: boolean }) {
+async function getAccessRecords(context?: AccessContext | any) {
+  assertCanOperateAccess(context)
   const c = cfg()
-  const available = await getModelFields(c.accessModel!)
-  let domain: unknown[] = [["x_studio_selection_field_87c_1jnb97pu7", "!=", "status3"]]
-
-  if (!canViewAllLocations(employee) && employee?.work_location && available.has(c.accessPlantField)) {
-    domain = andDomain(domain, [[c.accessPlantField, "ilike", String(employee.work_location)]])
-  }
-
+  const baseDomain: unknown[] = [["x_studio_selection_field_87c_1jnb97pu7", "!=", "status3"]]
+  const fields = await getModelFields(c.accessModel!)
+  const plant = contextPlant(context)
+  const plantDomain = !contextCanSeeAll(context) && plant && fields.has(c.accessPlantField) ? [[c.accessPlantField, "=", plant]] : []
   const records = await searchRead<OdooAccess>(
     c.accessModel!,
-    domain,
+    andDomain(baseDomain, plantDomain),
     accessFields,
     { limit: 100, order: "id desc" },
   )
-  const mapped = records.map(mapAccess)
-  if (canViewAllLocations(employee)) return mapped
-  return mapped.filter((record) => !record.planta || locationsMatch(employee?.work_location, record.planta))
+  return records.map(mapAccess)
+}
+
+
+async function getAccessByCode(code: string, context?: AccessContext | any) {
+  assertCanOperateAccess(context)
+  const c = cfg()
+  const clean = String(code || "").trim()
+  if (!clean) return null
+
+  const fields = await getModelFields(c.accessModel!)
+  const searchTerms: unknown[][] = []
+  if (fields.has("x_studio_folio")) searchTerms.push(["x_studio_folio", "=ilike", clean])
+  if (fields.has("x_name")) searchTerms.push(["x_name", "=ilike", clean])
+  if (/^\d+$/.test(clean)) searchTerms.push(["id", "=", Number(clean)])
+
+  const searchDomain = orDomain(searchTerms)
+  const plant = contextPlant(context)
+  const plantDomain = !contextCanSeeAll(context) && plant && fields.has(c.accessPlantField) ? [[c.accessPlantField, "=", plant]] : []
+  const records = await searchRead<OdooAccess>(
+    c.accessModel!,
+    andDomain(searchDomain, plantDomain),
+    accessFields,
+    { limit: 1, order: "id desc" },
+  )
+  return records[0] ? mapAccess(records[0]) : null
 }
 
 // Crea en Odoo una entrada manual para visitante, proveedor o unidad interna.
-async function createAccessRecord(data: any) {
+async function createAccessRecord(data: any, context?: AccessContext | any) {
+  assertCanOperateAccess(context)
   const c = cfg()
   const vehicleType = data.vehiculo === "Vehículo PURP" ? "Vehículo PURP" : "Otro vehículo"
 
@@ -665,7 +971,11 @@ async function createAccessRecord(data: any) {
     x_studio_selection_field_87c_1jnb97pu7: "status2",
   }
 
-  const employeeId = Number(data.employeeId)
+  const contextPlantValue = contextPlant(context)
+  const plant = String(data.planta || data.activePlant || contextPlantValue || "").trim()
+  if (plant) values[c.accessPlantField] = plant
+
+  const employeeId = Number(data.employeeId || contextEmployeeId(context))
   if (Number.isFinite(employeeId) && employeeId > 0) {
     values[c.accessOperatorEntryField] = employeeId
   }
@@ -673,10 +983,6 @@ async function createAccessRecord(data: any) {
   const accessEmployeeId = Number(data.accessEmployeeId)
   if (Number.isFinite(accessEmployeeId) && accessEmployeeId > 0) {
     values[c.accessPersonEmployeeField] = accessEmployeeId
-  }
-
-  if (data.work_location) {
-    values[c.accessPlantField] = String(data.work_location)
   }
 
   if (vehicleType === "Vehículo PURP") {
@@ -700,7 +1006,8 @@ async function createAccessRecord(data: any) {
 }
 
 // Registra en Odoo la salida de una persona o vehículo que ya estaba dentro.
-async function registerAccessExit(id: string, employeeId?: number) {
+async function registerAccessExit(id: string, employeeId?: number, context?: AccessContext | any) {
+  assertCanOperateAccess(context)
   const c = cfg()
   const recordId = Number(id)
   if (!Number.isFinite(recordId)) throw new Error(`ID de acceso inválido: ${id}`)
@@ -709,7 +1016,7 @@ async function registerAccessExit(id: string, employeeId?: number) {
     x_studio_salida_planta: nowOdooDatetime(),
     x_studio_selection_field_87c_1jnb97pu7: "status3",
   }
-  const employee = Number(employeeId)
+  const employee = Number(employeeId || contextEmployeeId(context))
   if (Number.isFinite(employee) && employee > 0) {
     values[c.accessOperatorExitField] = employee
   }
@@ -813,7 +1120,8 @@ async function acknowledgeTripNotifications(tripId?: number) {
 }
 
 // Revisa mensajes recientes y banderas de Odoo para avisar a caseta sobre correcciones o pendientes.
-async function getGuardNotifications(employee?: { id?: number; work_location?: string; can_view_all_locations?: boolean }) {
+async function getGuardNotifications(context?: AccessContext | any) {
+  assertCanOperateAccess(context)
   const c = cfg()
 
   const tripFieldsForNotifications = ["x_name", "x_studio_selection_field_8eu_1jmu93j7v", c.tripWarehouseField]
@@ -830,7 +1138,7 @@ async function getGuardNotifications(employee?: { id?: number; work_location?: s
       trip.id &&
       trip.x_name &&
       ["en_camino", "en_revision"].includes(status) &&
-(canViewAllLocations(employee) || locationsMatch(employee?.work_location, warehouse))
+      (contextCanSeeAll(context) || locationsMatch(contextPlant(context), warehouse))
     ) {
       tripById.set(trip.id, { folio: trip.x_name, status, warehouse })
     }
@@ -880,6 +1188,35 @@ async function acknowledgeGuardNotification(id: string) {
   return { ok: true, id }
 }
 
+
+async function updatePwaPlant(permissionId: number, plant: string, context?: AccessContext | any) {
+  const c = cfg()
+  const id = Number(permissionId || context?.permissions?.id)
+  const cleanPlant = String(plant || "").trim()
+  if (!Number.isFinite(id) || id <= 0) throw new Error("No se recibió el permiso PWA a actualizar.")
+  if (!cleanPlant) throw new Error("Selecciona una planta válida.")
+  if (!["Pinitos", "Burrión"].includes(cleanPlant)) throw new Error(`Planta no soportada: ${cleanPlant}`)
+
+  const records = await readRecords<PwaPermissionRecord>(c.pwaPermissionsModel, [id], [
+    "x_name",
+    "x_studio_usuario_odoo",
+    "x_studio_empleado",
+    "x_studio_rol_pwa",
+    "x_studio_requiere_gafete",
+    "x_studio_puede_abrir_odoo",
+    "x_studio_puede_entradasalida",
+    "x_studio_ve_logistica",
+    "x_studio_ve_todos_los_almacenes",
+    "x_studio_planta_predeterminada",
+  ])
+  if (!records[0]?.id) throw new Error("No encontré el registro de Permisos PWA a actualizar.")
+
+  await safeWrite(c.pwaPermissionsModel, [id], { x_studio_planta_predeterminada: cleanPlant })
+  const refreshed = await readRecords<PwaPermissionRecord>(c.pwaPermissionsModel, [id], pwaPermissionFields)
+  const permission = await mapPermission(refreshed[0] || records[0], `permiso ${id}`)
+  return { ok: true, plant: cleanPlant, permissions: permission }
+}
+
 // Punto de entrada único: recibe la acción solicitada por la app y llama a la función correspondiente.
 export async function POST(req: Request) {
   try {
@@ -888,17 +1225,22 @@ export async function POST(req: Request) {
     let data: unknown
 
     if (action === "ping") data = { uid: await authenticate(), ok: true }
+    else if (action === "odooUserLogin") data = await odooUserLogin(body.username, body.password)
     else if (action === "employeeLogin") data = await employeeLogin(body.code)
+    else if (action === "employeePermissionLogin") data = await employeePermissionLogin(body.code, body.odooUid)
+    else if (action === "refreshAppSession") data = await refreshAppSession(body.session)
     else if (action === "lookupEmployeeAccess") data = await lookupEmployeeAccess(body.code)
-    else if (action === "getTripByCode") data = await getTripByCode(body.code, body.employee)
-    else if (action === "getAllTrips") data = await getTrips([["x_studio_selection_field_8eu_1jmu93j7v", "!=", "status1"]], body.employee)
-    else if (action === "updateTripStatus") data = await updateTripStatus(body.folio, body.newStatus, body.additionalData || {})
-    else if (action === "getAccessRecords") data = await getAccessRecords(body.employee)
-    else if (action === "createAccessRecord") data = await createAccessRecord(body.data)
-    else if (action === "registerAccessExit") data = await registerAccessExit(body.id, body.employeeId)
+    else if (action === "getTripByCode") data = await getTripByCode(body.code, body.context || body.employee)
+    else if (action === "getAllTrips") data = await getTrips([["x_studio_selection_field_8eu_1jmu93j7v", "!=", "status1"]], body.context || body.employee)
+    else if (action === "updateTripStatus") data = await updateTripStatus(body.folio, body.newStatus, body.additionalData || {}, body.context)
+    else if (action === "getAccessByCode") data = await getAccessByCode(body.code, body.context)
+    else if (action === "getAccessRecords") data = await getAccessRecords(body.context)
+    else if (action === "createAccessRecord") data = await createAccessRecord(body.data, body.context)
+    else if (action === "registerAccessExit") data = await registerAccessExit(body.id, body.employeeId, body.context)
     else if (action === "getFleetVehicles") data = await getFleetVehicles()
-    else if (action === "getGuardNotifications") data = await getGuardNotifications(body.employee)
+    else if (action === "getGuardNotifications") data = await getGuardNotifications(body.context || body.employee)
     else if (action === "acknowledgeGuardNotification") data = await acknowledgeGuardNotification(body.id)
+    else if (action === "updatePwaPlant") data = await updatePwaPlant(body.permissionId, body.plant, body.context)
     else throw new Error(`Acción no soportada: ${action}`)
 
     return NextResponse.json({ ok: true, data })
