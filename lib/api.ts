@@ -15,9 +15,9 @@ const mockAccessRecords: AccessRecord[] = [
 ]
 
 // Copias modificables: simulan cambios reales mientras se usa el modo de prueba.
-let trips = [...mockTrips]
+const trips = [...mockTrips]
 let accessRecords = [...mockAccessRecords]
-let fleetVehicles: FleetVehicle[] = [
+const fleetVehicles: FleetVehicle[] = [
   { id: 1, name: "PICKUP 01" },
   { id: 2, name: "PICKUP 02" },
   { id: 3, name: "PICKUP 03" },

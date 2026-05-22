@@ -2,7 +2,7 @@
 
 // Interfaz de apoyo para registrar accesos y salidas de visitantes o unidades internas.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, ArrowLeft, Car, Clock, LogOut, Plus, Printer, RefreshCw, Search, User } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -39,20 +39,7 @@ export function AccessControl({ onBack, employee, context, activePlant = "", pre
   const [descripcionVehiculo, setDescripcionVehiculo] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadRecords();
-    loadFleetVehicles();
-  }, []);
-
-  useEffect(() => {
-    if (prefillName) {
-      setNombre(prefillName);
-      setCreating(true);
-    }
-    if (initialSearch) setSearch(initialSearch);
-  }, [prefillName, initialSearch]);
-
-  const loadRecords = async () => {
+  const loadRecords = useCallback(async () => {
     setLoading(true);
     try {
       setRecords(await getAccessRecords(context));
@@ -62,9 +49,9 @@ export function AccessControl({ onBack, employee, context, activePlant = "", pre
     } finally {
       setLoading(false);
     }
-  };
+  }, [context]);
 
-  const loadFleetVehicles = async () => {
+  const loadFleetVehicles = useCallback(async () => {
     setFleetLoading(true);
     setFleetError(null);
     try {
@@ -85,7 +72,20 @@ export function AccessControl({ onBack, employee, context, activePlant = "", pre
     } finally {
       setFleetLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadRecords();
+    loadFleetVehicles();
+  }, [loadRecords, loadFleetVehicles]);
+
+  useEffect(() => {
+    if (prefillName) {
+      setNombre(prefillName);
+      setCreating(true);
+    }
+    if (initialSearch) setSearch(initialSearch);
+  }, [prefillName, initialSearch]);
 
   // Crea un diccionario para mostrar el nombre del vehículo a partir de su identificador.
   const vehicleNameById = useMemo(() => {

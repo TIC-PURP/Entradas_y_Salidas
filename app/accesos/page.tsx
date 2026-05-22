@@ -2,7 +2,7 @@
 
 // Pantalla para registrar entradas y salidas manuales de personas o vehículos no ligados a un viaje.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getAccessRecords, createAccessRecord, registerAccessExit, getFleetVehicles } from '../../lib/api';
 import { AccessRecord, FleetVehicle, VehicleType } from '../../lib/types';
 
@@ -21,7 +21,7 @@ export default function AccesosPage() {
   const [loading, setLoading] = useState(true);
 
   // Función para cargar accesos
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [data, vehicles] = await Promise.all([
         getAccessRecords(),
@@ -37,12 +37,12 @@ export default function AccesosPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [unidad]);
 
   // Cargar accesos al montar la página
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   // Polling automático cada 30 segundos
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function AccesosPage() {
     }, 30000); // 30 segundos
 
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]);
 
   // Crea un nuevo acceso y limpia el formulario para el siguiente registro.
   async function handleCrear() {

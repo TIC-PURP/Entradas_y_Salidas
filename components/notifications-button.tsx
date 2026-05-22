@@ -2,7 +2,7 @@
 
 // Boton que revisa avisos para guardia y permite abrir el viaje relacionado.
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Bell, Check, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -43,6 +43,8 @@ export function NotificationsButton({ onOpenTrip, context }: NotificationsButton
     [items],
   )
 
+  const contextKey = useMemo(() => JSON.stringify(context || {}), [context])
+
   const requestNotificationPermission = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) return
     if (Notification.permission === "default") {
@@ -50,7 +52,7 @@ export function NotificationsButton({ onOpenTrip, context }: NotificationsButton
     }
   }
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const unread = await getGuardNotifications(context)
       setItems(unread)
@@ -67,7 +69,7 @@ export function NotificationsButton({ onOpenTrip, context }: NotificationsButton
     } catch (error) {
       console.error("Error loading chatter notifications", error)
     }
-  }
+  }, [context])
 
   // Consulta avisos periodicamente para que caseta vea cambios sin recargar la pagina.
   useEffect(() => {
@@ -82,7 +84,7 @@ export function NotificationsButton({ onOpenTrip, context }: NotificationsButton
       window.clearInterval(interval)
       window.removeEventListener("focus", onFocus)
     }
-  }, [JSON.stringify(context)])
+  }, [load, contextKey])
 
   // Abrir tambien resuelve el aviso global, para que no siga en otros equipos.
   const handleOpen = async (notification: GuardNotification) => {

@@ -430,9 +430,6 @@ function contextCanSeeAll(context?: AccessContext | any) {
   return Boolean(context?.permissions?.ve_todos_los_almacenes || context?.ve_todos_los_almacenes === true || context?.canSeeAll === true)
 }
 
-function contextCanOpenOdoo(context?: AccessContext | any) {
-  return Boolean(context?.permissions?.puede_abrir_odoo || context?.puede_abrir_odoo === true)
-}
 
 function contextCanSeeLogistics(context?: AccessContext | any) {
   return Boolean(context?.permissions?.puede_logistica || context?.puede_logistica === true)
@@ -694,7 +691,7 @@ async function employeeLogin(code: string) {
     )
   }
 
-  let employee = records[0]
+  const employee = records[0]
 
   // Si no encontró empleado activo, revisa si existe pero está archivado/inactivo para dar un mensaje más claro.
   if (!employee && available.has("active")) {
@@ -783,9 +780,6 @@ function tripPlantDomain(context?: AccessContext | any) {
   return orDomain(parts)
 }
 
-function employeeTripDomain(employee?: { id?: number; work_location?: string; work_location_id?: number }) {
-  return tripPlantDomain(employee)
-}
 
 function andDomain(...domains: unknown[][]) {
   const clean = domains.filter((domain) => Array.isArray(domain) && domain.length > 0)

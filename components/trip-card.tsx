@@ -10,7 +10,6 @@ import { Spinner } from "@/components/ui/spinner";
 import {
   EmployeeSession,
   Trip,
-  TripStatus,
   STATUS_LABELS,
   STATUS_COLORS,
 } from "@/lib/types";
