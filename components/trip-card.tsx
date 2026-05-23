@@ -19,6 +19,8 @@ import {
   validateCorrection,
   registerExit,
 } from "@/lib/api";
+import { formatOdooDateTime } from "@/lib/date-time";
+import { RecordChatter } from "@/components/record-chatter";
 import {
   Truck,
   User,
@@ -63,15 +65,12 @@ export function TripCard({ trip, onUpdate, onBack, employee, context }: TripCard
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return "—";
-    return new Date(dateString).toLocaleString("es-MX", {
-      dateStyle: "short",
-      timeStyle: "short",
-    });
+    return formatOdooDateTime(dateString);
   };
 
   const renderActions = () => {
     switch (trip.estado) {
-      case "en_camino":
+      case "confirmado":
         return (
           <div className="flex flex-col gap-4">
             <Button
@@ -137,7 +136,7 @@ export function TripCard({ trip, onUpdate, onBack, employee, context }: TripCard
           </div>
         );
 
-      case "bascula":
+      case "p_tara":
         return (
           <div className="flex items-center justify-center gap-3 p-6 bg-primary/10 rounded-lg border border-primary/20">
             <Clock className="h-8 w-8 text-primary" />
@@ -152,12 +151,12 @@ export function TripCard({ trip, onUpdate, onBack, employee, context }: TripCard
           <div className="flex items-center justify-center gap-3 p-6 bg-blue-600/10 rounded-lg border border-blue-600/20">
             <Truck className="h-8 w-8 text-blue-600" />
             <span className="text-lg font-medium text-blue-600">
-              Viaje en embarque, pendiente de administrativo
+              Viaje en embarque, pendiente de peso tara
             </span>
           </div>
         );
 
-      case "administrativo":
+      case "p_bruto":
         return (
           <Button
             size="lg"
@@ -308,6 +307,15 @@ export function TripCard({ trip, onUpdate, onBack, employee, context }: TripCard
           )}
 
           <div className="pt-4">{renderActions()}</div>
+
+          {trip.id && (
+            <RecordChatter
+              recordType="trip"
+              recordId={trip.id}
+              context={context}
+              title={`Conversación del viaje ${trip.folio}`}
+            />
+          )}
         </CardContent>
       </Card>
     </div>

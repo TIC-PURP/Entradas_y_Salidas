@@ -2,13 +2,13 @@
 
 // Estados posibles de un viaje, desde que se planea hasta que termina.
 export type TripStatus =
-  | "planeado"
-  | "en_camino"
+  | "pendiente"
+  | "confirmado"
   | "en_revision"
   | "en_espera"
-  | "bascula"
+  | "p_tara"
   | "embarque"
-  | "administrativo"
+  | "p_bruto"
   | "finalizado";
 
 // Información mínima que la caseta necesita ver de cada viaje.
@@ -99,25 +99,25 @@ export interface AccessRecord {
 
 // Textos amigables que se muestran al usuario en lugar de claves técnicas.
 export const STATUS_LABELS: Record<TripStatus, string> = {
-  planeado: "Planeado",
-  en_camino: "En Camino",
+  pendiente: "Pendientes",
+  confirmado: "Confirmados",
   en_revision: "En Revisión",
   en_espera: "En Espera",
-  bascula: "Báscula",
+  p_tara: "P. tara",
   embarque: "Embarque",
-  administrativo: "Administrativo",
+  p_bruto: "P. bruto",
   finalizado: "Finalizado",
 };
 
 // Colores visuales para distinguir rápidamente el estado de cada viaje.
 export const STATUS_COLORS: Record<TripStatus, string> = {
-  planeado: "bg-slate-200 text-slate-800",
-  en_camino: "bg-info text-info-foreground",
+  pendiente: "bg-slate-200 text-slate-800",
+  confirmado: "bg-info text-info-foreground",
   en_revision: "bg-warning text-warning-foreground",
   en_espera: "bg-accent text-accent-foreground",
-  bascula: "bg-primary text-primary-foreground",
+  p_tara: "bg-primary text-primary-foreground",
   embarque: "bg-blue-600 text-white",
-  administrativo: "bg-purple-600 text-white",
+  p_bruto: "bg-purple-600 text-white",
   finalizado: "bg-muted text-muted-foreground",
 };
 
@@ -160,4 +160,14 @@ export interface FleetVehicle {
 export interface EmployeeAccessLookup {
   employee: EmployeeSession;
   openAccess: AccessRecord | null;
+}
+
+// Mensaje del chatter de Odoo asociado a un viaje o entrada/salida.
+export interface ChatterMessage {
+  id: number;
+  recordId: number;
+  author: string;
+  body: string;
+  date?: string;
+  subject?: string;
 }

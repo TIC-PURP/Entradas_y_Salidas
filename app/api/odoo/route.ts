@@ -60,13 +60,13 @@ const fieldsCache = new Map<string, Set<string>>()
 
 // Traduce estados entendibles de la app a los códigos internos que Odoo guarda.
 const STATUS_TO_ODOO: Record<string, string> = {
-  planeado: "status1",
-  en_camino: "status2",
+  pendiente: "status1",
+  confirmado: "status2",
   en_revision: "status3",
   en_espera: "status4",
-  bascula: "status5",
+  p_tara: "status5",
   embarque: "status6",
-  administrativo: "status7",
+  p_bruto: "status7",
   finalizado: "status8",
 }
 
@@ -799,7 +799,7 @@ async function getTripByCode(code: string, context?: AccessContext | any) {
   const domain = andDomain(searchDomain, tripPlantDomain(context))
   const records = await searchRead<OdooTrip>(c.viajesModel!, domain, tripFields, { limit: 5 })
   const plant = contextPlant(context)
-  const trips = records.map(mapTrip).filter((trip) => trip.estado !== "planeado" && (contextCanSeeAll(context) || locationsMatch(plant, trip.almacen)))
+  const trips = records.map(mapTrip).filter((trip) => trip.estado !== "pendiente" && (contextCanSeeAll(context) || locationsMatch(plant, trip.almacen)))
   return trips[0] || null
 }
 
@@ -1037,6 +1037,101 @@ function stripHtml(value?: string) {
     .trim()
 }
 
+function splitPwaChatterBody(body: string, fallbackAuthor: string) {
+  const cleanBody = body.trim()
+  const match = cleanBody.match(/^([^\n:]{2,120}(?:\s+\([^)]+\))?):\s+([\s\S]+)$/)
+  if (!match) return { author: fallbackAuthor, body: cleanBody }
+
+  return {
+    author: match[1].trim(),
+    body: match[2].trim(),
+  }
+}
+
+function chatterModelFromType(recordType: string) {
+  const c = cfg()
+  if (recordType === "trip" || recordType === "viaje") return c.viajesModel
+  if (recordType === "access" || recordType === "acceso") return c.accessModel
+  throw new Error(`Tipo de registro no soportado para chatter: ${recordType}`)
+}
+
+async function ensureCreatorFollower(model: string, recordId: number) {
+  try {
+    const records = await readRecords<any>(model, [recordId], ["create_uid"])
+    const creatorId = Array.isArray(records?.[0]?.create_uid) ? records[0].create_uid[0] : undefined
+    if (!creatorId) return
+
+    const users = await readRecords<any>("res.users", [creatorId], ["partner_id"])
+    const partnerId = Array.isArray(users?.[0]?.partner_id) ? users[0].partner_id[0] : undefined
+    if (!partnerId) return
+
+    await callKw<boolean>(model, "message_subscribe", [[recordId]], { partner_ids: [partnerId] })
+  } catch (error) {
+    // No bloquea la operación: el mensaje sigue quedando en chatter aunque Odoo no permita suscribir al creador.
+    console.warn(`No pude suscribir al creador al chatter de ${model}/${recordId}.`, error)
+  }
+}
+
+async function getRecordChatter(recordType: string, recordId: number, context?: AccessContext | any) {
+  const model = chatterModelFromType(recordType)
+  const id = Number(recordId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error("ID inválido para leer chatter.")
+
+  if (model === cfg().viajesModel) assertCanReadTrips(context)
+  if (model === cfg().accessModel) assertCanOperateAccess(context)
+
+  const records = await searchRead<OdooChatterMessage>(
+    "mail.message",
+    [
+      ["model", "=", model],
+      ["res_id", "=", id],
+      ["message_type", "=", "comment"],
+    ],
+    ["id", "res_id", "body", "date", "author_id", "subject", "message_type"],
+    { limit: 50, order: "id asc" },
+  )
+
+  return records.map((message) => {
+    const parsed = splitPwaChatterBody(stripHtml(message.body), nameOf(message.author_id) || "Odoo")
+    return {
+      id: message.id,
+      recordId: message.res_id,
+      author: parsed.author,
+      body: parsed.body,
+      date: message.date,
+      subject: message.subject || "",
+    }
+  }).filter((message) => message.body.trim().length > 0)
+}
+
+async function postRecordChatter(recordType: string, recordId: number, body: string, context?: AccessContext | any) {
+  const model = chatterModelFromType(recordType)
+  const id = Number(recordId)
+  const cleanBody = String(body || "").trim()
+  if (!Number.isFinite(id) || id <= 0) throw new Error("ID inválido para enviar mensaje al chatter.")
+  if (!cleanBody) throw new Error("Escribe un mensaje antes de enviar.")
+  if (cleanBody.length > 2000) throw new Error("El mensaje es demasiado largo. Máximo 2000 caracteres.")
+
+  if (model === cfg().viajesModel) assertCanReadTrips(context)
+  if (model === cfg().accessModel) assertCanOperateAccess(context)
+
+  const employeeName = String(context?.employee?.name || context?.permissions?.empleado?.name || "Guardia PWA").trim()
+  const plant = String(contextPlant(context) || "").trim()
+  const prefix = plant ? `${employeeName} (${plant})` : employeeName
+  // Odoo Studio/Online puede mostrar literalmente etiquetas HTML cuando el mensaje llega por RPC.
+  // Por eso enviamos texto plano: se ve limpio en el chatter y la PWA lo puede leer sin código.
+  const plainBody = `${prefix}: ${cleanBody}`
+
+  await ensureCreatorFollower(model, id)
+  await callKw<number>(model, "message_post", [[id]], {
+    body: plainBody,
+    message_type: "comment",
+    subtype_xmlid: "mail.mt_comment",
+  })
+
+  return await getRecordChatter(recordType, id, context)
+}
+
 function hoursAgoOdooDatetime(hours: number) {
   const safeHours = Number.isFinite(hours) && hours > 0 ? hours : 48
   return new Date(Date.now() - safeHours * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ")
@@ -1235,6 +1330,8 @@ export async function POST(req: Request) {
     else if (action === "getGuardNotifications") data = await getGuardNotifications(body.context || body.employee)
     else if (action === "acknowledgeGuardNotification") data = await acknowledgeGuardNotification(body.id)
     else if (action === "updatePwaPlant") data = await updatePwaPlant(body.permissionId, body.plant, body.context)
+    else if (action === "getRecordChatter") data = await getRecordChatter(body.recordType, body.recordId, body.context)
+    else if (action === "postRecordChatter") data = await postRecordChatter(body.recordType, body.recordId, body.message, body.context)
     else throw new Error(`Acción no soportada: ${action}`)
 
     return NextResponse.json({ ok: true, data })

@@ -24,12 +24,12 @@ type ManualView = "menu" | "trips" | "access";
 
 const STATUS_FILTERS: { value: TripStatus | "all"; label: string }[] = [
   { value: "all", label: "Todos" },
-  { value: "en_camino", label: "En Camino" },
+  { value: "confirmado", label: "Confirmados" },
   { value: "en_revision", label: "En Revisión" },
   { value: "en_espera", label: "En Espera" },
-  { value: "bascula", label: "Báscula" },
+  { value: "p_tara", label: "P. tara" },
   { value: "embarque", label: "Embarque" },
-  { value: "administrativo", label: "Administrativo" },
+  { value: "p_bruto", label: "P. bruto" },
   { value: "finalizado", label: "Finalizado" },
 ];
 
@@ -103,7 +103,7 @@ export function ManualMode({ onSelectTrip, onBack, session, employee }: ManualMo
             <Card className="p-6 border-border cursor-pointer active:scale-[0.98] transition" onClick={() => setView("access")}>
               <UserCheck className="h-12 w-12 text-primary mb-4" />
               <h2 className="text-2xl font-bold mb-2">Entradas y Salidas</h2>
-              <p className="text-muted-foreground">Registrar entradas y salidas manuales de personas y vehículos.</p>
+              <p className="text-muted-foreground">Registrar entradas y salidas manuales.</p>
             </Card>
           )}
         </div>

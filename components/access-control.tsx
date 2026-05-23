@@ -3,7 +3,7 @@
 // Interfaz de apoyo para registrar accesos y salidas de visitantes o unidades internas.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, ArrowLeft, Car, Clock, LogOut, Plus, Printer, RefreshCw, Search, User } from "lucide-react";
+import { AlertCircle, ArrowLeft, Car, Clock, LogOut, MessageSquare, Plus, Printer, RefreshCw, Search, User } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ACCESS_STATUS_COLORS, ACCESS_STATUS_LABELS, AccessRecord, EmployeeSession, FleetVehicle, VehicleType } from "@/lib/types";
 import { createAccessRecord, getAccessRecords, getFleetVehicles, registerAccessExit } from "@/lib/api";
+import { formatOdooDateTime } from "@/lib/date-time";
+import { RecordChatter } from "@/components/record-chatter";
 
 interface AccessControlProps {
   onBack: () => void;
@@ -38,6 +40,7 @@ export function AccessControl({ onBack, employee, context, activePlant = "", pre
   const [vehiculoPurp, setVehiculoPurp] = useState("");
   const [descripcionVehiculo, setDescripcionVehiculo] = useState("");
   const [saving, setSaving] = useState(false);
+  const [openChatterId, setOpenChatterId] = useState<string | null>(null);
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
@@ -112,7 +115,7 @@ export function AccessControl({ onBack, employee, context, activePlant = "", pre
 
   const formatDate = (value?: string) => {
     if (!value) return "—";
-    return new Date(value).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" });
+    return formatOdooDateTime(value);
   };
 
 
@@ -385,10 +388,34 @@ export function AccessControl({ onBack, employee, context, activePlant = "", pre
                   {record.operador_salida && <span>Operador salida: {record.operador_salida}</span>}
                 </div>
 
-                {record.estado === "en_planta" && (
-                  <Button className="w-full h-12" variant="secondary" onClick={() => handleExit(record.id)}>
-                    <LogOut className="mr-2 h-5 w-5" /> Registrar salida
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    className="h-12"
+                    variant="secondary"
+                    onClick={() => setOpenChatterId((current) => current === record.id ? null : record.id)}
+                  >
+                    <MessageSquare className="mr-2 h-5 w-5" />
+                    Conversación
                   </Button>
+
+                  {record.estado === "en_planta" && (
+                    <Button className="h-12" variant="secondary" onClick={() => handleExit(record.id)}>
+                      <LogOut className="mr-2 h-5 w-5" /> Registrar salida
+                    </Button>
+                  )}
+                </div>
+
+                {openChatterId === record.id && (
+                  <div className="mt-3">
+                    <RecordChatter
+                      recordType="access"
+                      recordId={Number(record.id)}
+                      context={context}
+                      title={`Conversación de entrada ${record.folio || record.nombre}`}
+                      compact
+                    />
+                  </div>
                 )}
               </Card>
             ))}
