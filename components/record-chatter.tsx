@@ -8,12 +8,12 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { getRecordChatter, postRecordChatter } from "@/lib/api";
-import type { ChatterMessage } from "@/lib/types";
+import type { ChatterMessage, OdooContext } from "@/lib/types";
 
 interface RecordChatterProps {
   recordType: "trip" | "access";
   recordId?: number | string;
-  context?: any;
+  context?: OdooContext;
   title?: string;
   compact?: boolean;
 }

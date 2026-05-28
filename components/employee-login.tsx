@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Scanner as QRScanner, IDetectedBarcode } from "@yudiel/react-qr-scanner";
+import dynamic from "next/dynamic";
+import type { IDetectedBarcode } from "@yudiel/react-qr-scanner";
 import { Camera, IdCard, KeyRound, LogIn, ScanLine, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,18 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import type { AppSession, EmployeeSession, OdooLoginResult } from "@/lib/types";
 import { employeePermissionLogin, odooUserLogin, refreshAppSession } from "@/lib/api";
+
+const QRScanner = dynamic(
+  () => import("@yudiel/react-qr-scanner").then((module) => module.Scanner),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Activando camara...
+      </div>
+    ),
+  },
+);
 
 interface EmployeeLoginProps {
   onLogin: (session: AppSession) => void;

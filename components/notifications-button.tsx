@@ -9,12 +9,14 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { getGuardNotifications, acknowledgeGuardNotification, getTripByCode } from "@/lib/api"
-import type { GuardNotification, Trip } from "@/lib/types"
+import type { GuardNotification, OdooContext, Trip } from "@/lib/types"
 
 interface NotificationsButtonProps {
   onOpenTrip: (trip: Trip) => void
-  context?: any
+  context?: OdooContext
 }
+
+const NOTIFICATION_POLL_MS = 15000
 
 function showBrowserNotification(item: GuardNotification) {
   if (typeof window === "undefined" || !("Notification" in window)) return
@@ -71,18 +73,25 @@ export function NotificationsButton({ onOpenTrip, context }: NotificationsButton
     }
   }, [context])
 
-  // Consulta avisos periodicamente para que caseta vea cambios sin recargar la pagina.
+  // Consulta avisos periodicamente mientras la aplicacion esta visible.
   useEffect(() => {
     requestNotificationPermission()
     load()
-    const interval = window.setInterval(load, 5000)
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load()
+    }, NOTIFICATION_POLL_MS)
 
     const onFocus = () => load()
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void load()
+    }
     window.addEventListener("focus", onFocus)
+    document.addEventListener("visibilitychange", onVisibilityChange)
 
     return () => {
       window.clearInterval(interval)
       window.removeEventListener("focus", onFocus)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
     }
   }, [load, contextKey])
 

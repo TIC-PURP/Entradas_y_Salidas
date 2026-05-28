@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { ACCESS_STATUS_COLORS, ACCESS_STATUS_LABELS, AccessRecord, EmployeeSession, FleetVehicle, VehicleType } from "@/lib/types";
+import { ACCESS_STATUS_COLORS, ACCESS_STATUS_LABELS, AccessRecord, EmployeeSession, FleetVehicle, OdooContext, VehicleType } from "@/lib/types";
 import { createAccessRecord, getAccessRecords, getFleetVehicles, registerAccessExit } from "@/lib/api";
 import { formatOdooDateTime } from "@/lib/date-time";
 import { RecordChatter } from "@/components/record-chatter";
@@ -18,7 +18,7 @@ import { RecordChatter } from "@/components/record-chatter";
 interface AccessControlProps {
   onBack: () => void;
   employee: EmployeeSession;
-  context?: any;
+  context?: OdooContext;
   activePlant?: string;
   prefillName?: string;
   initialSearch?: string;

@@ -9,6 +9,27 @@ PWA para control de entradas/salidas y logistica conectada directamente a Odoo m
 - Para probar contra una base de pruebas, cambia `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME` y `ODOO_API_KEY` en `.env.local`.
 - `.env.local` no debe subirse a GitHub ni compartirse.
 
+Variables obligatorias para despliegue:
+
+```text
+ODOO_URL
+ODOO_DB
+ODOO_USERNAME
+ODOO_API_KEY
+APP_SESSION_SECRET
+APP_ORIGIN
+```
+
+`APP_SESSION_SECRET` debe ser un valor aleatorio de al menos 32 caracteres y distinto de la API Key de Odoo. `APP_ORIGIN` debe ser el origen HTTPS publico exacto de la PWA, por ejemplo `https://entradas.example.com`.
+
+Configuracion recomendada:
+
+```text
+API_REQUIRE_SAME_ORIGIN=true
+API_RATE_LIMIT_WINDOW_MS=60000
+API_RATE_LIMIT_MAX=10
+```
+
 ## Conexion Odoo
 
 La conexion esta en:
@@ -144,6 +165,7 @@ Validar:
 npm run lint
 npm run typecheck
 npm run build
+npm audit --omit=dev --audit-level=moderate
 ```
 
 Produccion:
@@ -155,6 +177,9 @@ npm start
 ## Seguridad
 
 - Usa un usuario tecnico dedicado para la API.
+- Las operaciones autenticadas usan una cookie de sesion firmada, `HttpOnly`, `SameSite=Strict` y segura en produccion; el servidor vuelve a obtener permisos desde Odoo.
+- No confies en el contexto enviado por el navegador: planta, permisos y operador se validan del lado servidor.
+- Mantiene `API_REQUIRE_SAME_ORIGIN=true` y configura limites de intentos para login.
 - Revoca cualquier API Key que haya sido expuesta por capturas, ZIP o GitHub.
 - Usa HTTPS en produccion.
 - No habilites datos simulados en produccion; esta version no incluye modo simulado.

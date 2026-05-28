@@ -3,24 +3,44 @@
 // Pantalla principal: login Odoo, permisos PWA, scanner y operación de caseta.
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { Scanner } from "@/components/scanner";
-import { TripCard } from "@/components/trip-card";
-import { ManualMode } from "@/components/manual-mode";
+import dynamic from "next/dynamic";
 import type { AppSession, EmployeeSession, Trip } from "@/lib/types";
-import { buildOdooContext, getAccessByCode, getTripByCode, lookupEmployeeAccess, updatePwaPlant } from "@/lib/api";
+import { buildOdooContext, getAccessByCode, getTripByCode, lookupEmployeeAccess, odooLogout, updatePwaPlant } from "@/lib/api";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { NotificationsButton } from "@/components/notifications-button";
 import { clearStoredSession, EmployeeLogin, storeSession, storeTheme } from "@/components/employee-login";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LogOut, Settings, UserCheck } from "lucide-react";
-import { AccessControl } from "@/components/access-control";
 
 type AppView = "scanner" | "trip" | "manual" | "access";
 const PLANTS = ["Pinitos", "Burrión"];
+
+function ViewLoading({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-72 flex-1 items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
+      {label}
+    </div>
+  );
+}
+
+const Scanner = dynamic(() => import("@/components/scanner").then((module) => module.Scanner), {
+  loading: () => <ViewLoading label="Activando camara..." />,
+});
+const TripCard = dynamic(() => import("@/components/trip-card").then((module) => module.TripCard), {
+  loading: () => <ViewLoading label="Cargando viaje..." />,
+});
+const ManualMode = dynamic(() => import("@/components/manual-mode").then((module) => module.ManualMode), {
+  loading: () => <ViewLoading label="Cargando lista..." />,
+});
+const AccessControl = dynamic(() => import("@/components/access-control").then((module) => module.AccessControl), {
+  loading: () => <ViewLoading label="Cargando accesos..." />,
+});
+const NotificationsButton = dynamic(
+  () => import("@/components/notifications-button").then((module) => module.NotificationsButton),
+);
 
 export default function Home() {
   const [view, setView] = useState<AppView>("scanner");
@@ -146,6 +166,7 @@ export default function Home() {
   }, []);
 
   const handleLogout = useCallback(() => {
+    void odooLogout().catch(() => undefined);
     clearStoredSession();
     setSession(null);
     setSelectedTrip(null);

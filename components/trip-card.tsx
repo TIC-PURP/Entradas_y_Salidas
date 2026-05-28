@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import {
   EmployeeSession,
+  OdooContext,
   Trip,
   STATUS_LABELS,
   STATUS_COLORS,
@@ -38,7 +39,7 @@ interface TripCardProps {
   onUpdate: (trip: Trip) => void;
   onBack: () => void;
   employee: EmployeeSession;
-  context?: any;
+  context?: OdooContext;
 }
 
 // Tarjeta que resume un viaje y ofrece las acciones que caseta puede realizar.
@@ -151,7 +152,7 @@ export function TripCard({ trip, onUpdate, onBack, employee, context }: TripCard
           <div className="flex items-center justify-center gap-3 p-6 bg-blue-600/10 rounded-lg border border-blue-600/20">
             <Truck className="h-8 w-8 text-blue-600" />
             <span className="text-lg font-medium text-blue-600">
-              Viaje en embarque, pendiente de peso tara
+              Viaje en embarque, pendiente de peso bruto
             </span>
           </div>
         );

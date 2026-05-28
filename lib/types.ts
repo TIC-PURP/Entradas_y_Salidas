@@ -162,6 +162,14 @@ export interface EmployeeAccessLookup {
   openAccess: AccessRecord | null;
 }
 
+// Contexto de operación que se pasa entre el cliente y el API para filtrar por planta y permisos.
+export interface OdooContext {
+  activePlant: string;
+  canSeeAll: boolean;
+  employee?: EmployeeSession;
+  permissions: PwaPermissions;
+}
+
 // Mensaje del chatter de Odoo asociado a un viaje o entrada/salida.
 export interface ChatterMessage {
   id: number;

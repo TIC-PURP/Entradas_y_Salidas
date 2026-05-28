@@ -6,6 +6,7 @@ import type {
   EmployeeSession,
   FleetVehicle,
   GuardNotification,
+  OdooContext,
   OdooLoginResult,
   Trip,
   TripStatus,
@@ -38,7 +39,11 @@ export async function odooUserLogin(username: string, password: string): Promise
   return odoo<OdooLoginResult>("odooUserLogin", { username, password })
 }
 
-export function buildOdooContext(session?: AppSession | null) {
+export async function odooLogout(): Promise<void> {
+  await odoo<void>("logout")
+}
+
+export function buildOdooContext(session?: AppSession | null): OdooContext | undefined {
   if (!session) return undefined
   return {
     activePlant:
@@ -80,14 +85,14 @@ export async function lookupEmployeeAccess(code: string): Promise<EmployeeAccess
 // Busca un viaje por folio, orden o placas, que son los datos que puede traer un código escaneado.
 export async function getTripByCode(
   code: string,
-  context?: Pick<EmployeeSession, "id" | "work_location" | "work_location_id"> | ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<Trip | null> {
   return odoo<Trip | null>("getTripByCode", { code, context })
 }
 
 // Devuelve los viajes visibles para caseta; los pendientes aún no deben aparecer como operables.
 export async function getAllTrips(
-  context?: Pick<EmployeeSession, "id" | "work_location" | "work_location_id"> | ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<Trip[]> {
   return odoo<Trip[]>("getAllTrips", { context })
 }
@@ -97,7 +102,7 @@ export async function updateTripStatus(
   folio: string,
   newStatus: TripStatus,
   additionalData?: Partial<Trip> & { employeeId?: number },
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<Trip | null> {
   return odoo<Trip | null>("updateTripStatus", { folio, newStatus, additionalData, context })
 }
@@ -106,7 +111,7 @@ export async function updateTripStatus(
 export async function validateEntry(
   folio: string,
   employeeId?: number,
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<Trip | null> {
   return updateTripStatus(folio, "en_espera", { fecha_entrada: nowIso(), employeeId }, context)
 }
@@ -115,7 +120,7 @@ export async function validateEntry(
 export async function markInvalid(
   folio: string,
   employeeId?: number,
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<Trip | null> {
   return updateTripStatus(folio, "en_revision", { employeeId }, context)
 }
@@ -123,7 +128,7 @@ export async function markInvalid(
 // Regresa el viaje a espera cuando logística corrigió la información pendiente.
 export async function validateCorrection(
   folio: string,
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<Trip | null> {
   return updateTripStatus(folio, "en_espera", undefined, context)
 }
@@ -132,7 +137,7 @@ export async function validateCorrection(
 export async function registerExit(
   folio: string,
   employeeId?: number,
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<Trip | null> {
   return updateTripStatus(folio, "finalizado", { fecha_salida: nowIso(), employeeId }, context)
 }
@@ -143,12 +148,12 @@ export async function getFleetVehicles(): Promise<FleetVehicle[]> {
 }
 
 // Busca una entrada/salida por folio de acceso generado por Odoo.
-export async function getAccessByCode(code: string, context?: ReturnType<typeof buildOdooContext>): Promise<AccessRecord | null> {
+export async function getAccessByCode(code: string, context?: OdooContext): Promise<AccessRecord | null> {
   return odoo<AccessRecord | null>("getAccessByCode", { code, context })
 }
 
 // Lista las entradas y salidas manuales de visitantes o unidades no asociadas a viajes.
-export async function getAccessRecords(context?: ReturnType<typeof buildOdooContext>): Promise<AccessRecord[]> {
+export async function getAccessRecords(context?: OdooContext): Promise<AccessRecord[]> {
   return odoo<AccessRecord[]>("getAccessRecords", { context })
 }
 
@@ -163,7 +168,7 @@ export async function createAccessRecord(
     accessEmployeeId?: number
     planta?: string
   },
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<AccessRecord> {
   return odoo<AccessRecord>("createAccessRecord", { data, context })
 }
@@ -172,14 +177,14 @@ export async function createAccessRecord(
 export async function registerAccessExit(
   id: string,
   employeeId?: number,
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<AccessRecord | null> {
   return odoo<AccessRecord | null>("registerAccessExit", { id, employeeId, context })
 }
 
 // Trae avisos pendientes que logística quiere que el guardia revise.
 export async function getGuardNotifications(
-  context?: Pick<EmployeeSession, "id" | "work_location"> | ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<GuardNotification[]> {
   return odoo<GuardNotification[]>("getGuardNotifications", { context })
 }
@@ -192,7 +197,7 @@ export async function acknowledgeGuardNotification(id: string): Promise<void> {
 export async function getRecordChatter(
   recordType: "trip" | "access",
   recordId: number,
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<ChatterMessage[]> {
   return odoo<ChatterMessage[]>("getRecordChatter", { recordType, recordId, context })
 }
@@ -201,12 +206,12 @@ export async function postRecordChatter(
   recordType: "trip" | "access",
   recordId: number,
   message: string,
-  context?: ReturnType<typeof buildOdooContext>,
+  context?: OdooContext,
 ): Promise<ChatterMessage[]> {
   return odoo<ChatterMessage[]>("postRecordChatter", { recordType, recordId, message, context })
 }
 
-export async function updatePwaPlant(permissionId: number, plant: string, context?: ReturnType<typeof buildOdooContext>) {
+export async function updatePwaPlant(permissionId: number, plant: string, context?: OdooContext) {
   return odoo<{ ok: boolean; plant: string; permissions: OdooLoginResult["permissions"] }>("updatePwaPlant", {
     permissionId,
     plant,

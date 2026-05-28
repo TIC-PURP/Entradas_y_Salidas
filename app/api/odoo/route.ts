@@ -1,5 +1,7 @@
 // Recibe solicitudes internas de la app y las convierte en operaciones seguras contra Odoo.
 
+import { createHmac, timingSafeEqual } from "node:crypto"
+import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 
 type OdooIdName = false | [number, string]
@@ -57,6 +59,127 @@ type OdooRpcError = {
 }
 
 const fieldsCache = new Map<string, Set<string>>()
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>()
+const AUTH_COOKIE = process.env.NODE_ENV === "production" ? "__Host-purp_pwa_auth" : "purp_pwa_auth"
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12
+
+type AuthTicket = {
+  uid: number
+  employeeId?: number
+  expiresAt: number
+}
+
+class HttpError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
+function sessionSecret() {
+  const secret = process.env.APP_SESSION_SECRET?.trim()
+  if (!secret || secret.length < 32) {
+    throw new Error("Configura APP_SESSION_SECRET con al menos 32 caracteres aleatorios.")
+  }
+  return secret
+}
+
+function ticketSignature(payload: string) {
+  return createHmac("sha256", sessionSecret()).update(payload).digest("base64url")
+}
+
+function encodeTicket(uid: number, employeeId?: number) {
+  const ticket: AuthTicket = {
+    uid,
+    employeeId,
+    expiresAt: Date.now() + SESSION_MAX_AGE_SECONDS * 1000,
+  }
+  const payload = Buffer.from(JSON.stringify(ticket)).toString("base64url")
+  return `${payload}.${ticketSignature(payload)}`
+}
+
+function decodeTicket(value?: string): AuthTicket | null {
+  if (!value) return null
+  const [payload, signature] = value.split(".")
+  if (!payload || !signature) return null
+
+  const actual = Buffer.from(signature, "base64url")
+  const expected = Buffer.from(ticketSignature(payload), "base64url")
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null
+
+  try {
+    const ticket = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as AuthTicket
+    if (!Number.isFinite(ticket.uid) || ticket.uid <= 0 || !Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= Date.now()) {
+      return null
+    }
+    if (ticket.employeeId !== undefined && (!Number.isFinite(ticket.employeeId) || ticket.employeeId <= 0)) return null
+    return ticket
+  } catch {
+    return null
+  }
+}
+
+async function setAuthTicket(uid: number, employeeId?: number) {
+  const store = await cookies()
+  store.set(AUTH_COOKIE, encodeTicket(uid, employeeId), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  })
+}
+
+async function clearAuthTicket() {
+  const store = await cookies()
+  store.set(AUTH_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: 0,
+  })
+}
+
+async function requireAuthTicket() {
+  const ticket = decodeTicket((await cookies()).get(AUTH_COOKIE)?.value)
+  if (!ticket) throw new HttpError(401, "La sesion expiro o no es valida. Vuelve a iniciar sesion.")
+  return ticket
+}
+
+function assertSameOrigin(req: Request) {
+  if (process.env.API_REQUIRE_SAME_ORIGIN === "false") return
+  const origin = req.headers.get("origin")
+  const expected = (process.env.APP_ORIGIN?.trim() || new URL(req.url).origin).replace(/\/+$/, "")
+  if (!origin || origin.replace(/\/+$/, "") !== expected) {
+    throw new HttpError(403, "Origen de solicitud no permitido.")
+  }
+}
+
+function enforceLoginRateLimit(req: Request, action: string) {
+  const windowMs = Math.max(1000, Number(process.env.API_RATE_LIMIT_WINDOW_MS || 60000))
+  const max = Math.max(1, Number(process.env.API_RATE_LIMIT_MAX || 10))
+  const forwardedFor = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+  const client = forwardedFor || req.headers.get("x-real-ip") || "unknown"
+  const key = `${action}:${client}`
+  const now = Date.now()
+  if (rateLimitBuckets.size > 1000) {
+    for (const [bucketKey, value] of rateLimitBuckets) {
+      if (value.resetAt <= now) rateLimitBuckets.delete(bucketKey)
+    }
+  }
+  const existing = rateLimitBuckets.get(key)
+  const bucket = !existing || existing.resetAt <= now
+    ? { count: 0, resetAt: now + windowMs }
+    : existing
+  bucket.count += 1
+  rateLimitBuckets.set(key, bucket)
+  if (bucket.count > max) {
+    throw new HttpError(429, "Demasiados intentos. Espera antes de volver a intentar.")
+  }
+}
 
 // Traduce estados entendibles de la app a los códigos internos que Odoo guarda.
 const STATUS_TO_ODOO: Record<string, string> = {
@@ -120,6 +243,10 @@ function requireConfig() {
   return c as Required<ReturnType<typeof cfg>>
 }
 
+function errMsg(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 function rpcMessage(payload: OdooRpcError, fallback = "Error RPC de Odoo") {
   return payload.error?.data?.message || payload.error?.message || fallback
 }
@@ -140,7 +267,7 @@ async function odooRpc<T>(service: string, method: string, args: unknown[]): Pro
   })
 
   const text = await res.text()
-  let payload: any
+  let payload: OdooRpcError & { result?: T }
   try {
     payload = JSON.parse(text)
   } catch {
@@ -199,9 +326,19 @@ const pwaPermissionFields = [
   "x_studio_planta_predeterminada",
 ]
 
+type HrEmployeeRecord = {
+  id: number
+  name?: string
+  job_title?: string
+  department_id?: OdooIdName
+  work_location_id?: OdooIdName
+  work_location_name?: string
+  active?: boolean
+}
+
 async function readEmployeeForSession(employeeId?: number, fallbackName?: string) {
   if (!employeeId) return null
-  const employees = await readRecords<any>("hr.employee", [employeeId], ["name", "job_title", "department_id", "work_location_id", "work_location_name", "active"])
+  const employees = await readRecords<HrEmployeeRecord>("hr.employee", [employeeId], ["name", "job_title", "department_id", "work_location_id", "work_location_name", "active"])
   const e = employees[0]
   if (!e?.id) return null
   if (e.active === false) throw new Error(`El empleado ${e.name || employeeId} está inactivo/archivado en Odoo.`)
@@ -212,7 +349,7 @@ async function readEmployeeForSession(employeeId?: number, fallbackName?: string
     department: nameOf(e.department_id),
     work_location: nameOf(e.work_location_id) || e.work_location_name || "",
     work_location_id: Array.isArray(e.work_location_id) ? e.work_location_id[0] : undefined,
-  } as any
+  }
 }
 
 async function mapPermission(perm: PwaPermissionRecord, loginLabel = "") {
@@ -313,7 +450,18 @@ async function odooUserLogin(username: string, password: string) {
 }
 
 
-async function refreshAppSession(session: any) {
+// Forma mínima de sesión que se acepta en el refresh — el cliente puede enviar campos extra.
+type PartialAppSession = {
+  odooUser?: { uid?: number }
+  employee?: { id?: number; name?: string; work_location?: string }
+  permissions?: { empleado?: { id?: number } }
+  activePlant?: string
+  theme?: string
+  sessionVersion?: string
+  [key: string]: unknown
+}
+
+async function refreshAppSession(session: PartialAppSession) {
   const uid = Number(session?.odooUser?.uid)
   if (!Number.isFinite(uid) || uid <= 0) {
     throw new Error("La sesión local no tiene usuario Odoo válido. Vuelve a iniciar sesión.")
@@ -414,43 +562,80 @@ async function employeePermissionLogin(code: string, odooUid: number) {
   }
 }
 
+async function contextFromTicket(ticket: AuthTicket): Promise<AccessContext> {
+  const session = await refreshAppSession({
+    odooUser: { uid: ticket.uid },
+    employee: ticket.employeeId ? { id: ticket.employeeId } : undefined,
+    permissions: ticket.employeeId ? { empleado: { id: ticket.employeeId } } : undefined,
+  })
+  return {
+    activePlant: session.activePlant,
+    employee: session.employee || undefined,
+    permissions: session.permissions,
+  }
+}
+
 type AccessContext = {
   activePlant?: string
   canSeeAll?: boolean
-  employee?: { id?: number; work_location?: string; work_location_id?: number }
+  employee?: {
+    id?: number
+    name?: string
+    work_location?: string
+    work_location_id?: number
+  }
+  permissions?: {
+    id?: number
+    ve_todos_los_almacenes?: boolean
+    puede_logistica?: boolean
+    puede_entrada_salida?: boolean
+    empleado?: {
+      id?: number
+      name?: string
+      work_location?: string
+      work_location_id?: number
+    } | null
+  }
 }
 
-function contextPlant(context?: AccessContext | any) {
-  return String(context?.activePlant || context?.work_location || context?.employee?.work_location || "").trim()
+function contextPlant(context?: AccessContext) {
+  return String(context?.activePlant || context?.employee?.work_location || "").trim()
 }
 
-function contextCanSeeAll(context?: AccessContext | any) {
+function contextCanSeeAll(context?: AccessContext) {
   // La visibilidad global debe venir EXCLUSIVAMENTE del permiso de Odoo:
   // x_permisos_pwa.x_studio_ve_todos_los_almacenes.
-  return Boolean(context?.permissions?.ve_todos_los_almacenes || context?.ve_todos_los_almacenes === true || context?.canSeeAll === true)
+  return Boolean(context?.permissions?.ve_todos_los_almacenes)
 }
 
 
-function contextCanSeeLogistics(context?: AccessContext | any) {
-  return Boolean(context?.permissions?.puede_logistica || context?.puede_logistica === true)
+function contextCanSeeLogistics(context?: AccessContext) {
+  return Boolean(context?.permissions?.puede_logistica)
 }
 
-function contextCanOperateAccess(context?: AccessContext | any) {
-  return Boolean(context?.permissions?.puede_entrada_salida || context?.puede_entrada_salida === true)
+function contextCanOperateAccess(context?: AccessContext) {
+  return Boolean(context?.permissions?.puede_entrada_salida)
 }
 
-function contextEmployeeId(context?: AccessContext | any) {
-  const id = Number(context?.employee?.id || context?.permissions?.empleado?.id || context?.employeeId)
+function contextEmployeeId(context?: AccessContext) {
+  const id = Number(context?.employee?.id || context?.permissions?.empleado?.id)
   return Number.isFinite(id) && id > 0 ? id : undefined
 }
 
-function assertCanOperateAccess(context?: AccessContext | any) {
+function assertCanOperateAccess(context?: AccessContext) {
   if (!contextCanOperateAccess(context)) {
     throw new Error("Este usuario no tiene permiso PWA para registrar entradas/salidas. Revisa x_permisos_pwa.x_studio_puede_entradasalida.")
   }
 }
 
-function assertCanReadTrips(context?: AccessContext | any) {
+function assertAccessScope(context?: AccessContext) {
+  assertCanOperateAccess(context)
+  if (!contextCanSeeAll(context) && !contextPlant(context)) {
+    throw new Error("Este usuario no tiene una planta operativa asignada.")
+  }
+}
+
+function assertCanReadTrips(context?: AccessContext) {
   if (!contextCanSeeLogistics(context)) {
     throw new Error("Este usuario no tiene permiso PWA para ver logística/viajes. Revisa x_permisos_pwa.x_studio_ve_logistica.")
   }
@@ -624,9 +809,9 @@ async function employeeLogin(code: string) {
   let available: Set<string>
   try {
     available = await getModelFields("hr.employee")
-  } catch (error: any) {
+  } catch (error: unknown) {
     throw new Error(
-      `El usuario API no tiene acceso al modelo de empleados (hr.employee). En Odoo asigna permisos de Empleados/RRHH al usuario de la API. Detalle: ${error?.message || error}`,
+      `El usuario API no tiene acceso al modelo de empleados (hr.employee). En Odoo asigna permisos de Empleados/RRHH al usuario de la API. Detalle: ${errMsg(error)}`,
     )
   }
 
@@ -685,9 +870,9 @@ async function employeeLogin(code: string) {
       fields: employeeFields,
       limit: 1,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     throw new Error(
-      `No pude validar el empleado en Odoo. Revisa que el usuario API tenga permiso de lectura en Empleados y pueda leer los campos ${configuredCodeFields.join(", ")}. Detalle: ${error?.message || error}`,
+      `No pude validar el empleado en Odoo. Revisa que el usuario API tenga permiso de lectura en Empleados y pueda leer los campos ${configuredCodeFields.join(", ")}. Detalle: ${errMsg(error)}`,
     )
   }
 
@@ -759,7 +944,7 @@ async function safeWrite(model: string, ids: number[], values: Record<string, un
   }
 }
 
-async function getTrips(domain: unknown[] = [], context?: AccessContext | any) {
+async function getTrips(domain: unknown[] = [], context?: AccessContext) {
   assertCanReadTrips(context)
   const c = cfg()
   const plantDomain = tripPlantDomain(context)
@@ -769,10 +954,10 @@ async function getTrips(domain: unknown[] = [], context?: AccessContext | any) {
   return records.map(mapTrip).filter((trip) => contextCanSeeAll(context) || locationsMatch(plant, trip.almacen))
 }
 
-function tripPlantDomain(context?: AccessContext | any) {
+function tripPlantDomain(context?: AccessContext) {
   const c = cfg()
   if (contextCanSeeAll(context)) return []
-  const employee = context?.employee || context
+  const employee = context?.employee
   const plant = contextPlant(context)
   const parts: unknown[][] = []
   if (employee?.work_location_id) parts.push([c.tripWarehouseField, "=", Number(employee.work_location_id)])
@@ -789,7 +974,7 @@ function andDomain(...domains: unknown[][]) {
 }
 
 // Busca un viaje usando el dato escaneado o escrito: folio, orden o placas.
-async function getTripByCode(code: string, context?: AccessContext | any) {
+async function getTripByCode(code: string, context?: AccessContext) {
   assertCanReadTrips(context)
   const c = cfg()
   const clean = String(code || "").trim()
@@ -804,7 +989,7 @@ async function getTripByCode(code: string, context?: AccessContext | any) {
 }
 
 // Actualiza el estado del viaje y guarda fechas de entrada o salida cuando aplica.
-async function updateTripStatus(folio: string, newStatus: string, additionalData: Record<string, unknown> = {}, context?: AccessContext | any) {
+async function updateTripStatus(folio: string, newStatus: string, additionalData: Record<string, unknown> = {}, context?: AccessContext) {
   assertCanOperateAccess(context)
   const c = cfg()
   const trip = await getTripByCode(folio, context)
@@ -818,7 +1003,7 @@ async function updateTripStatus(folio: string, newStatus: string, additionalData
   if (additionalData.fecha_salida) values.x_studio_salida = toOdooDatetime(additionalData.fecha_salida)
 
   const fallbackValues = { ...values }
-  const employeeId = Number(additionalData.employeeId)
+  const employeeId = Number(contextEmployeeId(context))
   if (Number.isFinite(employeeId) && employeeId > 0) {
     if (["en_espera", "en_revision"].includes(newStatus)) values[c.tripOperatorEntryField] = employeeId
     if (newStatus === "finalizado") values[c.tripOperatorExitField] = employeeId
@@ -844,9 +1029,9 @@ async function getFleetVehicles() {
   let available: Set<string>
   try {
     available = await getModelFields("fleet.vehicle")
-  } catch (error: any) {
+  } catch (error: unknown) {
     throw new Error(
-      `No pude leer el modelo de Flotilla (fleet.vehicle). Da permisos de Flotilla/Encargado o Flotilla/Administrador al usuario API. Detalle: ${error?.message || error}`
+      `No pude leer el modelo de Flotilla (fleet.vehicle). Da permisos de Flotilla/Encargado o Flotilla/Administrador al usuario API. Detalle: ${errMsg(error)}`
     )
   }
 
@@ -869,9 +1054,9 @@ async function getFleetVehicles() {
       limit: 300,
       order: `${orderField} asc`,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     throw new Error(
-      `No pude cargar vehículos de Flotilla. Revisa permisos del usuario API sobre fleet.vehicle. Detalle: ${error?.message || error}`
+      `No pude cargar vehículos de Flotilla. Revisa permisos del usuario API sobre fleet.vehicle. Detalle: ${errMsg(error)}`
     )
   }
 
@@ -911,8 +1096,8 @@ async function findFleetVehicleId(value?: string) {
   return found?.[0]?.[0] || null
 }
 
-async function getAccessRecords(context?: AccessContext | any) {
-  assertCanOperateAccess(context)
+async function getAccessRecords(context?: AccessContext) {
+  assertAccessScope(context)
   const c = cfg()
   const baseDomain: unknown[] = [["x_studio_selection_field_87c_1jnb97pu7", "!=", "status3"]]
   const fields = await getModelFields(c.accessModel!)
@@ -928,8 +1113,8 @@ async function getAccessRecords(context?: AccessContext | any) {
 }
 
 
-async function getAccessByCode(code: string, context?: AccessContext | any) {
-  assertCanOperateAccess(context)
+async function getAccessByCode(code: string, context?: AccessContext) {
+  assertAccessScope(context)
   const c = cfg()
   const clean = String(code || "").trim()
   if (!clean) return null
@@ -952,9 +1137,20 @@ async function getAccessByCode(code: string, context?: AccessContext | any) {
   return records[0] ? mapAccess(records[0]) : null
 }
 
+type CreateAccessData = {
+  nombre: string
+  vehiculo: string
+  vehiculo_purp?: string
+  descripcion_vehiculo?: string
+  employeeId?: number
+  accessEmployeeId?: number
+  planta?: string
+  activePlant?: string
+}
+
 // Crea en Odoo una entrada manual para visitante, proveedor o unidad interna.
-async function createAccessRecord(data: any, context?: AccessContext | any) {
-  assertCanOperateAccess(context)
+async function createAccessRecord(data: CreateAccessData, context?: AccessContext) {
+  assertAccessScope(context)
   const c = cfg()
   const vehicleType = data.vehiculo === "Vehículo PURP" ? "Vehículo PURP" : "Otro vehículo"
 
@@ -966,10 +1162,10 @@ async function createAccessRecord(data: any, context?: AccessContext | any) {
   }
 
   const contextPlantValue = contextPlant(context)
-  const plant = String(data.planta || data.activePlant || contextPlantValue || "").trim()
+  const plant = String(contextPlantValue || "").trim()
   if (plant) values[c.accessPlantField] = plant
 
-  const employeeId = Number(data.employeeId || contextEmployeeId(context))
+  const employeeId = Number(contextEmployeeId(context))
   if (Number.isFinite(employeeId) && employeeId > 0) {
     values[c.accessOperatorEntryField] = employeeId
   }
@@ -1000,17 +1196,22 @@ async function createAccessRecord(data: any, context?: AccessContext | any) {
 }
 
 // Registra en Odoo la salida de una persona o vehículo que ya estaba dentro.
-async function registerAccessExit(id: string, employeeId?: number, context?: AccessContext | any) {
-  assertCanOperateAccess(context)
+async function registerAccessExit(id: string, context?: AccessContext) {
+  assertAccessScope(context)
   const c = cfg()
   const recordId = Number(id)
+  if (!Number.isSafeInteger(recordId) || recordId <= 0) throw new Error("ID de acceso invalido.")
+  const accessibleRecord = await getAccessByCode(String(recordId), context)
+  if (!accessibleRecord || Number(accessibleRecord.id) !== recordId) {
+    throw new Error("No tienes acceso a este registro en la planta activa.")
+  }
   if (!Number.isFinite(recordId)) throw new Error(`ID de acceso inválido: ${id}`)
 
   const values: Record<string, unknown> = {
     x_studio_salida_planta: nowOdooDatetime(),
     x_studio_selection_field_87c_1jnb97pu7: "status3",
   }
-  const employee = Number(employeeId || contextEmployeeId(context))
+  const employee = Number(contextEmployeeId(context))
   if (Number.isFinite(employee) && employee > 0) {
     values[c.accessOperatorExitField] = employee
   }
@@ -1057,11 +1258,11 @@ function chatterModelFromType(recordType: string) {
 
 async function ensureCreatorFollower(model: string, recordId: number) {
   try {
-    const records = await readRecords<any>(model, [recordId], ["create_uid"])
+    const records = await readRecords<{ id: number; create_uid?: OdooIdName }>(model, [recordId], ["create_uid"])
     const creatorId = Array.isArray(records?.[0]?.create_uid) ? records[0].create_uid[0] : undefined
     if (!creatorId) return
 
-    const users = await readRecords<any>("res.users", [creatorId], ["partner_id"])
+    const users = await readRecords<{ id: number; partner_id?: OdooIdName }>("res.users", [creatorId], ["partner_id"])
     const partnerId = Array.isArray(users?.[0]?.partner_id) ? users[0].partner_id[0] : undefined
     if (!partnerId) return
 
@@ -1072,13 +1273,33 @@ async function ensureCreatorFollower(model: string, recordId: number) {
   }
 }
 
-async function getRecordChatter(recordType: string, recordId: number, context?: AccessContext | any) {
+async function assertCanAccessRecord(model: string, id: number, context?: AccessContext) {
+  const c = cfg()
+  if (model === c.accessModel) {
+    const access = await getAccessByCode(String(id), context)
+    if (!access || Number(access.id) !== id) throw new Error("No tienes acceso a este registro en la planta activa.")
+    return
+  }
+
+  assertCanReadTrips(context)
+  const records = await searchRead<OdooTrip>(
+    c.viajesModel!,
+    andDomain([["id", "=", id]], tripPlantDomain(context)),
+    tripFields,
+    { limit: 1 },
+  )
+  const trip = records[0] ? mapTrip(records[0]) : null
+  if (!trip || trip.estado === "pendiente" || (!contextCanSeeAll(context) && !locationsMatch(contextPlant(context), trip.almacen))) {
+    throw new Error("No tienes acceso a este viaje en la planta activa.")
+  }
+}
+
+async function getRecordChatter(recordType: string, recordId: number, context?: AccessContext) {
   const model = chatterModelFromType(recordType)
   const id = Number(recordId)
   if (!Number.isFinite(id) || id <= 0) throw new Error("ID inválido para leer chatter.")
 
-  if (model === cfg().viajesModel) assertCanReadTrips(context)
-  if (model === cfg().accessModel) assertCanOperateAccess(context)
+  await assertCanAccessRecord(model!, id, context)
 
   const records = await searchRead<OdooChatterMessage>(
     "mail.message",
@@ -1104,7 +1325,7 @@ async function getRecordChatter(recordType: string, recordId: number, context?: 
   }).filter((message) => message.body.trim().length > 0)
 }
 
-async function postRecordChatter(recordType: string, recordId: number, body: string, context?: AccessContext | any) {
+async function postRecordChatter(recordType: string, recordId: number, body: string, context?: AccessContext) {
   const model = chatterModelFromType(recordType)
   const id = Number(recordId)
   const cleanBody = String(body || "").trim()
@@ -1112,8 +1333,7 @@ async function postRecordChatter(recordType: string, recordId: number, body: str
   if (!cleanBody) throw new Error("Escribe un mensaje antes de enviar.")
   if (cleanBody.length > 2000) throw new Error("El mensaje es demasiado largo. Máximo 2000 caracteres.")
 
-  if (model === cfg().viajesModel) assertCanReadTrips(context)
-  if (model === cfg().accessModel) assertCanOperateAccess(context)
+  await assertCanAccessRecord(model!, id, context)
 
   const employeeName = String(context?.employee?.name || context?.permissions?.empleado?.name || "Guardia PWA").trim()
   const plant = String(contextPlant(context) || "").trim()
@@ -1181,9 +1401,9 @@ async function writeAcknowledgedNotificationIds(ids: Set<string>) {
   try {
     await callKw<boolean>("ir.config_parameter", "set_param", [c.notificationAckParamKey, JSON.stringify(limited)])
     ackCache.persistAvailable = true
-  } catch (error: any) {
+  } catch (error: unknown) {
     ackCache.persistAvailable = false
-    throw new Error(`No pude guardar la notificación como enterada de forma global en Odoo. Da permisos de Ajustes/Parámetros del sistema al usuario API o crea acceso a ir.config_parameter. Detalle: ${error?.message || error}`)
+    throw new Error(`No pude guardar la notificación como enterada de forma global en Odoo. Da permisos de Ajustes/Parámetros del sistema al usuario API o crea acceso a ir.config_parameter. Detalle: ${errMsg(error)}`)
   }
 }
 
@@ -1209,7 +1429,7 @@ async function acknowledgeTripNotifications(tripId?: number) {
 }
 
 // Revisa mensajes recientes y banderas de Odoo para avisar a caseta sobre correcciones o pendientes.
-async function getGuardNotifications(context?: AccessContext | any) {
+async function getGuardNotifications(context?: AccessContext) {
   assertCanOperateAccess(context)
   const c = cfg()
 
@@ -1270,7 +1490,8 @@ async function getGuardNotifications(context?: AccessContext | any) {
 }
 
 // Marca una notificación como atendida para que no siga apareciendo al guardia.
-async function acknowledgeGuardNotification(id: string) {
+async function acknowledgeGuardNotification(id: string, context?: AccessContext) {
+  assertCanOperateAccess(context)
   const ids = await readAcknowledgedNotificationIds()
   ids.add(String(id))
   await writeAcknowledgedNotificationIds(ids)
@@ -1278,10 +1499,17 @@ async function acknowledgeGuardNotification(id: string) {
 }
 
 
-async function updatePwaPlant(permissionId: number, plant: string, context?: AccessContext | any) {
+async function updatePwaPlant(permissionId: number, plant: string, context?: AccessContext) {
   const c = cfg()
-  const id = Number(permissionId || context?.permissions?.id)
+  const contextPermissionId = Number(context?.permissions?.id)
+  const requestedPermissionId = Number(permissionId)
+  const id = Number.isFinite(contextPermissionId) && contextPermissionId > 0
+    ? contextPermissionId
+    : requestedPermissionId
   const cleanPlant = String(plant || "").trim()
+  if (Number.isFinite(contextPermissionId) && contextPermissionId > 0 && requestedPermissionId !== contextPermissionId) {
+    throw new Error("El permiso PWA solicitado no coincide con la sesion actual.")
+  }
   if (!Number.isFinite(id) || id <= 0) throw new Error("No se recibió el permiso PWA a actualizar.")
   if (!cleanPlant) throw new Error("Selecciona una planta válida.")
   if (!["Pinitos", "Burrión"].includes(cleanPlant)) throw new Error(`Planta no soportada: ${cleanPlant}`)
@@ -1309,34 +1537,68 @@ async function updatePwaPlant(permissionId: number, plant: string, context?: Acc
 // Punto de entrada único: recibe la acción solicitada por la app y llama a la función correspondiente.
 export async function POST(req: Request) {
   try {
+    assertSameOrigin(req)
     const body = await req.json()
     const { action } = body
     let data: unknown
 
-    if (action === "ping") data = { uid: await authenticate(), ok: true }
-    else if (action === "odooUserLogin") data = await odooUserLogin(body.username, body.password)
-    else if (action === "employeeLogin") data = await employeeLogin(body.code)
-    else if (action === "employeePermissionLogin") data = await employeePermissionLogin(body.code, body.odooUid)
-    else if (action === "refreshAppSession") data = await refreshAppSession(body.session)
-    else if (action === "lookupEmployeeAccess") data = await lookupEmployeeAccess(body.code)
-    else if (action === "getTripByCode") data = await getTripByCode(body.code, body.context || body.employee)
-    else if (action === "getAllTrips") data = await getTrips([["x_studio_selection_field_8eu_1jmu93j7v", "!=", "status1"]], body.context || body.employee)
-    else if (action === "updateTripStatus") data = await updateTripStatus(body.folio, body.newStatus, body.additionalData || {}, body.context)
-    else if (action === "getAccessByCode") data = await getAccessByCode(body.code, body.context)
-    else if (action === "getAccessRecords") data = await getAccessRecords(body.context)
-    else if (action === "createAccessRecord") data = await createAccessRecord(body.data, body.context)
-    else if (action === "registerAccessExit") data = await registerAccessExit(body.id, body.employeeId, body.context)
-    else if (action === "getFleetVehicles") data = await getFleetVehicles()
-    else if (action === "getGuardNotifications") data = await getGuardNotifications(body.context || body.employee)
-    else if (action === "acknowledgeGuardNotification") data = await acknowledgeGuardNotification(body.id)
-    else if (action === "updatePwaPlant") data = await updatePwaPlant(body.permissionId, body.plant, body.context)
-    else if (action === "getRecordChatter") data = await getRecordChatter(body.recordType, body.recordId, body.context)
-    else if (action === "postRecordChatter") data = await postRecordChatter(body.recordType, body.recordId, body.message, body.context)
-    else throw new Error(`Acción no soportada: ${action}`)
+    if (action === "odooUserLogin") {
+      enforceLoginRateLimit(req, action)
+      const result = await odooUserLogin(body.username, body.password)
+      await setAuthTicket(result.user.uid)
+      data = result
+    } else if (action === "logout") {
+      await clearAuthTicket()
+      data = { ok: true }
+    } else {
+      const ticket = await requireAuthTicket()
 
-    return NextResponse.json({ ok: true, data })
-  } catch (error: any) {
+      if (action === "employeePermissionLogin") {
+        enforceLoginRateLimit(req, action)
+        const result = await employeePermissionLogin(body.code, ticket.uid)
+        await setAuthTicket(ticket.uid, result.employee.id)
+        data = result
+      } else if (action === "refreshAppSession") {
+        const requestedSession = (body.session || {}) as PartialAppSession
+        data = await refreshAppSession({
+          ...requestedSession,
+          odooUser: { ...requestedSession.odooUser, uid: ticket.uid },
+          employee: ticket.employeeId ? { id: ticket.employeeId } : undefined,
+          permissions: ticket.employeeId ? { empleado: { id: ticket.employeeId } } : undefined,
+        })
+      } else {
+        const context = await contextFromTicket(ticket)
+
+        if (action === "ping") data = { ok: true }
+        else if (action === "lookupEmployeeAccess") {
+          assertCanOperateAccess(context)
+          data = await lookupEmployeeAccess(body.code)
+        } else if (action === "getTripByCode") data = await getTripByCode(body.code, context)
+        else if (action === "getAllTrips") data = await getTrips([["x_studio_selection_field_8eu_1jmu93j7v", "!=", "status1"]], context)
+        else if (action === "updateTripStatus") data = await updateTripStatus(body.folio, body.newStatus, body.additionalData || {}, context)
+        else if (action === "getAccessByCode") data = await getAccessByCode(body.code, context)
+        else if (action === "getAccessRecords") data = await getAccessRecords(context)
+        else if (action === "createAccessRecord") data = await createAccessRecord(body.data, context)
+        else if (action === "registerAccessExit") data = await registerAccessExit(body.id, context)
+        else if (action === "getFleetVehicles") {
+          assertCanOperateAccess(context)
+          data = await getFleetVehicles()
+        } else if (action === "getGuardNotifications") data = await getGuardNotifications(context)
+        else if (action === "acknowledgeGuardNotification") data = await acknowledgeGuardNotification(body.id, context)
+        else if (action === "updatePwaPlant") data = await updatePwaPlant(body.permissionId, body.plant, context)
+        else if (action === "getRecordChatter") data = await getRecordChatter(body.recordType, body.recordId, context)
+        else if (action === "postRecordChatter") data = await postRecordChatter(body.recordType, body.recordId, body.message, context)
+        else throw new Error(`Accion no soportada: ${action}`)
+      }
+    }
+
+    return NextResponse.json({ ok: true, data }, { headers: { "Cache-Control": "no-store" } })
+  } catch (error: unknown) {
     console.error("/api/odoo error", error)
-    return NextResponse.json({ ok: false, error: error?.message || "Error desconocido" }, { status: 500 })
+    const status = error instanceof HttpError ? error.status : 500
+    return NextResponse.json(
+      { ok: false, error: errMsg(error) || "Error desconocido" },
+      { status, headers: { "Cache-Control": "no-store" } },
+    )
   }
 }
